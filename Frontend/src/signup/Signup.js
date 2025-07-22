@@ -36,14 +36,14 @@ function Signup() {
 
   return (
     <div className="signup-container">
-      <h2 className="signup-title">Create Your Cloud Account</h2>
+      <h2 className="signup-title">Enter details</h2>
       <form onSubmit={handleSubmit} className="signup-form">
         <input name="username" placeholder="Username" onChange={handleChange} required />
         <input name="password" type="password" placeholder="Password" onChange={handleChange} required />
         <input name="cloudName" placeholder="Cloud Name" onChange={handleChange} required />
         <input name="project" placeholder="Project" onChange={handleChange} required />
         <input name="environment" placeholder="Environment" onChange={handleChange} required />
-        <button type="submit">Sign Up</button>
+        <button type="submit">Submit</button>
       </form>
     </div>
   );
