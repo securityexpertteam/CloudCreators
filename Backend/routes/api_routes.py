@@ -45,3 +45,58 @@ def get_latest_config():
     config = latest[0]
     config["_id"] = str(config["_id"])
     return config
+
+
+#         ====User Onboarding routes============
+#below route accept duplicates
+
+# @router.post("/bulk_signup")
+# def bulk_signup(users: List[User]):
+#     inserted_users = []
+#     for user in users:
+#         # Check for unique combination of project, username, and password
+#         existing = users_collection.find_one({
+#             "project": user.project,
+#             "username": user.username,
+#             "password": user.password
+#         })
+#         if existing:
+#             continue  # Skip duplicates
+
+#         users_collection.insert_one(user.dict())
+#         inserted_users.append(user.dict())
+
+#     if not inserted_users:
+#         raise HTTPException(status_code=400, detail="All entries are duplicates")
+
+#     return {"message": f"{len(inserted_users)} users added successfully", "data": inserted_users}
+
+
+#below code doesn't accept duplicates
+
+@router.post("/bulk_signup")
+def bulk_signup(users: List[User]):
+    inserted_users = []
+
+    for user in users:
+        # Check if username OR password OR project already exists
+        existing = users_collection.find_one({
+            "$or": [
+                {"username": user.username},
+                {"password": user.password},
+                {"project": user.project}
+            ]
+        })
+        if existing:
+            continue  # Skip if any of the fields already exist
+
+        users_collection.insert_one(user.dict())
+        inserted_users.append(user.dict())
+
+    if not inserted_users:
+        raise HTTPException(status_code=400, detail="Entries are duplicates")
+
+    return {
+        "message": f"{len(inserted_users)} users added successfully",
+        "data": inserted_users
+    }
