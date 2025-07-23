@@ -1,19 +1,16 @@
 // App.js
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import Signup from './signup/Signup';
-
-import Dashboard from './Dashboard';
-
-// function Dashboard() {
-//   return <h1>Welcome to Cloud Dashboard!</h1>;
-// }
+import StandardConfigForm from './StandardConfigForm';
+import StandardConfigSummary from './StandardConfigSummary';
 
 function App() {
   return (
     <BrowserRouter>
       <Routes>
         <Route path="/" element={<Signup />} />
-        <Route path="/dashboard" element={<Dashboard />} />
+        <Route path="/config" element={<StandardConfigForm />} />
+        <Route path="/config/summary" element={<StandardConfigSummary />} />
       </Routes>
     </BrowserRouter>
   );

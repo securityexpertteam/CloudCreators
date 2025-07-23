@@ -1,5 +1,5 @@
-# models.py
 from pydantic import BaseModel
+from typing import Optional
 from typing import List
 from datetime import datetime
 
@@ -9,11 +9,6 @@ class User(BaseModel):
     cloudName: str
     project: str
     environment: str
-
-
-# backend/models.py
-
-
 
 class Resource(BaseModel):
     resource_id: str
@@ -26,19 +21,12 @@ class Resource(BaseModel):
     untagged_instances: str
     orphaned_vms: int
 
+# ✅ New model for /config form submissions
 
-# class Resource(BaseModel):
-#     ResourceType: str
-#     SubResourceType: str
-#     ResourceName: str
-#     Region: str
-#     TotalCost: float
-#     Currency: str
-#     Finding: str
-#     Recommendation: str
-#     Environment: str
-#     Timestamp: datetime
-#     Tags: List[str]
-#     ConfidenceScore: float
-#     Status: str
-#     Entity: str
+
+class StandardConfig(BaseModel):
+    cpu_usage: Optional[int] = None
+    memory_usage: Optional[int] = None
+    network_usage: Optional[int] = None
+    untagged: Optional[bool] = False
+    orphaned: Optional[bool] = False
