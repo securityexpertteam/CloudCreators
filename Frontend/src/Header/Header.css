@@ -1,0 +1,52 @@
+
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 24px;
+  background-color: #1e1e2f;
+  color: white;
+}
+
+.logo-section {
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+}
+
+.logo-icon {
+  font-size: 24px;
+  margin-right: 10px;
+}
+
+.app-name {
+  font-size: 20px;
+  font-weight: bold;
+}
+
+.right-section {
+  display: flex;
+  align-items: center;
+}
+
+.nav-links {
+  display: flex;
+  gap: 20px;
+  margin-right: 20px;
+}
+
+.nav-links a {
+  color: white;
+  text-decoration: none;
+  font-weight: 500;
+}
+
+.nav-links a.active {
+  border-bottom: 2px solid #f5a623;
+}
+
+.user-icon {
+  font-size: 24px;
+  color: white;
+}
+
