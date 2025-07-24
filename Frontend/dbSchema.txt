@@ -110,3 +110,47 @@
     "orphaned_vms": 3
   }
 ])
+
+
+-------------------------------------------
+                  For signin
+
+db.signupdata.insertMany([
+  {
+    firstname: "Vishnu",
+    lastname: "Pochampelly",
+    email: "vishnu@gmail.com", 
+    password: "vishnu@123" 
+  },
+  {
+    firstname: "subhash", 
+    lastname: "konduru", 
+    email: "subhash@gmail.com", 
+    password: "subhash@123" 
+  },
+  {
+    firstname: "Adhya", 
+    lastname: "Bhima", 
+    email: "adhya@example.com", 
+    password: "ady@123" 
+  },
+  {
+    firstname: "Jagadeesh", 
+    lastname: "M", 
+    email: "jagadeesh@gamil.com", 
+    password: "jagadeesh@123" 
+  },
+  {
+    firstname: "Prudhvi", 
+    lastname: "K", 
+    email: "prudhvi@gmail.com", 
+    password: "prudhvi@123" 
+  },
+  {
+    firstname: "Anudeep", 
+    lastname: "P", 
+    email: "anudeep@gmail.com", 
+    password: "Anudeep@123" 
+  }
+])
+

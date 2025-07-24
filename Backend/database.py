@@ -21,3 +21,4 @@ def get_db():
 users_collection = db["users"]
 resources_collection = db["newResourceDb"]
 standard_config_collection = db["standardConfigDb"]  # ✅ NEW
+users_signup_collection=db["signupdata"]

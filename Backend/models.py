@@ -30,3 +30,9 @@ class StandardConfig(BaseModel):
     network_usage: Optional[int] = None
     untagged: Optional[bool] = False
     orphaned: Optional[bool] = False
+
+# signin
+
+class SignupUser(BaseModel):
+    email: str
+    password: str    

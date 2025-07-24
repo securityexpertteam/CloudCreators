@@ -77,16 +77,6 @@ function StandardConfigForm() {
 
   return (
     <div className="App">
-      <div className="header">
-        <div className="logo">🛠️ Config Portal</div>
-        <div className="profile">
-          <img
-            src="https://i.pravatar.cc/36?img=3"
-            alt="Profile"
-            className="avatar"
-          />
-        </div>
-      </div>
 
       <h1>Standard Configuration</h1>
 
