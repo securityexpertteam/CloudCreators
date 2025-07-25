@@ -1,12 +1,19 @@
 from pydantic import BaseModel
 from typing import Optional
+from typing import List
 
 class User(BaseModel):
-    username: str
-    password: str
     cloudName: str
-    project: str
     environment: str
+    rootId: str
+    managementUnitId: str
+    srvaccntName: str
+    srvacctPass: str
+    LoginId: str = None
+
+class BulkSignupRequest(BaseModel):
+    users: List[User]
+    login_id: str  
 
 class Resource(BaseModel):
     resource_id: str

@@ -1,30 +1,45 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import "./userOnboarding.css";
 
 const UserOnboarding = () => {
+  const [envEntries, setEnvEntries] = useState([]);
+  const loginId = JSON.parse(localStorage.getItem("user")).email;
+
+  useEffect(() => {
+    fetch(`http://localhost:8000/environments/${loginId}`)
+      .then(res => res.json())
+      .then(data => setEnvEntries(data.data || []));
+  }, [loginId]);
+
   const [user, setUser] = useState({
     cloudName: "",
-    project: "",
     environment: "",
-    username: "",
-    password: "",
+    rootId: "",
+    managementUnitId: "",
+    srvaccntName: "",
+    srvacctPass: "",
   });
 
   const [usersList, setUsersList] = useState([]);
 
   const handleAddUser = () => {
-    if (Object.values(user).some((val) => !val.trim())) {
+    if (Object.values(user).some(val => !val.trim())) {
       alert("Please fill all fields");
       return;
     }
-
     setUsersList([...usersList, user]);
-    setUser({ cloudName: "", project: "", environment: "", username: "", password: "" });
+    setUser({
+      cloudName: "",
+      environment: "",
+      rootId: "",
+      managementUnitId: "",
+      srvaccntName: "",
+      srvacctPass: "",
+    });
   };
 
   const handleEditUser = (index) => {
-    const editingUser = usersList[index];
-    setUser(editingUser);
+    setUser(usersList[index]);
     setUsersList(usersList.filter((_, i) => i !== index));
   };
 
@@ -32,51 +47,40 @@ const UserOnboarding = () => {
     setUsersList(usersList.filter((_, i) => i !== index));
   };
 
-//   const handleSubmit = async () => {
-//     try {
-//       const response = await fetch("http://localhost:8000/bulk_signup", {
-//         method: "POST",
-//         headers: { "Content-Type": "application/json" },
-//         body: JSON.stringify(usersList),
-//       });
-//       const data = await response.json();
-//       alert(data.message);
-//       setUsersList([]);
-//     } catch (error) {
-//       alert("Error submitting data");
-//       console.error(error);
-//     }
-//   };
+  const handleSubmit = async () => {
+    const payload = {
+      users: usersList,
+      login_id: loginId,
+    };
 
-const handleSubmit = async () => {
-  try {
-    const response = await fetch("http://localhost:8000/bulk_signup", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(usersList),
-    });
+    try {
+      const response = await fetch("http://localhost:8000/bulk_signup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
 
-    const data = await response.json();
+      const data = await response.json();
 
-    if (!response.ok) {
-      // Server returned an error message
-      alert(data.detail || "Error occurred during submission");
-      return;
+      if (!response.ok) {
+        alert(data.detail || "Error occurred during submission");
+        return;
+      }
+
+      alert(data.message);
+      setUsersList([]);
+      fetch(`http://localhost:8000/environments/${loginId}`)
+        .then(res => res.json())
+        .then(data => setEnvEntries(data.data || []));
+    } catch (error) {
+      alert("Error submitting data");
+      console.error("Submission Error:", error);
     }
-
-    alert(data.message); // This will now only show if response is OK
-    setUsersList([]);
-  } catch (error) {
-    alert("Error submitting data");
-    console.error("Submission Error:", error);
-  }
-};
-
+  };
 
   return (
     <div className="container">
-      <h2>Onboarding to Environment</h2>
-
+      <h2>Environment Onboarding</h2>
       <div className="form-row">
         <div className="input-group">
           <label>Cloud Provider</label>
@@ -90,17 +94,6 @@ const handleSubmit = async () => {
             <option value="GCP">GCP</option>
           </select>
         </div>
-
-        <div className="input-group">
-          <label>Management Unit</label>
-          <input
-            type="text"
-            value={user.project}
-            placeholder="Enter project"
-            onChange={(e) => setUser({ ...user, project: e.target.value })}
-          />
-        </div>
-
         <div className="input-group">
           <label>Environment</label>
           <select
@@ -114,64 +107,129 @@ const handleSubmit = async () => {
             <option value="Test">Test</option>
           </select>
         </div>
-
         <div className="input-group">
-          <label>Username</label>
+          <label>RootId</label>
           <input
             type="text"
-            placeholder="Enter username"
-            value={user.username}
-            onChange={(e) => setUser({ ...user, username: e.target.value })}
+            value={user.rootId}
+            placeholder="Enter RootId"
+            onChange={(e) =>
+              setUser({ ...user, rootId: e.target.value })
+            }
           />
         </div>
-
         <div className="input-group">
-          <label>Password</label>
+          <label>ManagementUnit_ID</label>
+          <input
+            type="text"
+            value={user.managementUnitId}
+            placeholder="Enter ManagementUnit_ID"
+            onChange={(e) =>
+              setUser({ ...user, managementUnitId: e.target.value })
+            }
+          />
+        </div>
+        <div className="input-group">
+          <label>Service Account Name</label>
+          <input
+            type="text"
+            value={user.srvaccntName}
+            placeholder="Enter Service Account Name"
+            onChange={(e) =>
+              setUser({ ...user, srvaccntName: e.target.value })
+            }
+          />
+        </div>
+        <div className="input-group">
+          <label>Service Account Password</label>
           <input
             type="password"
-            placeholder="Enter password"
-            value={user.password}
-            onChange={(e) => setUser({ ...user, password: e.target.value })}
+            value={user.srvacctPass}
+            placeholder="Enter Service Account Password"
+            onChange={(e) =>
+              setUser({ ...user, srvacctPass: e.target.value })
+            }
           />
         </div>
-
-        <button className="add-btn" onClick={handleAddUser}>Add</button>
+        <button className="add-btn" onClick={handleAddUser}>
+          Add
+        </button>
       </div>
 
-      {/* User List */}
       {usersList.length > 0 && (
         <div className="table-container">
           <table>
             <thead>
               <tr>
                 <th>Cloud</th>
-                <th>Management Unit</th>
                 <th>Environment</th>
-                <th>Username</th>
-                <th>Password</th>
+                <th>RootId</th>
+                <th>ManagementUnit_ID</th>
+                <th>ServiceAccountName</th>
+                <th>ServiceAccountPass</th>
                 <th>Actions</th>
               </tr>
-                </thead>
-      <tbody>
-      {usersList.map((u, idx) => (
-        <tr key={idx}>
-          <td>{u.cloudName}</td>
-          <td>{u.project}</td>
-          <td>{u.environment}</td>
-          <td>{u.username}</td>
-          <td>{"*".repeat(u.password.length)}</td> {/* Hide actual password */}
-          <td>
-            <button className="edit-btn" onClick={() => handleEditUser(idx)}>Edit</button>
-            <button className="delete-btn" onClick={() => handleDeleteUser(idx)}>Delete</button>
-          </td>
-        </tr>
-      ))}
-    </tbody>
+            </thead>
+            <tbody>
+              {usersList.map((u, idx) => (
+                <tr key={idx}>
+                  <td>{u.cloudName}</td>
+                  <td>{u.environment}</td>
+                  <td>{u.rootId}</td>
+                  <td>{u.managementUnitId}</td>
+                  <td>{u.srvaccntName}</td>
+                  <td>{"*".repeat(u.srvacctPass.length)}</td>
+                  <td>
+                    <button
+                      className="edit-btn"
+                      onClick={() => handleEditUser(idx)}
+                    >
+                      Edit
+                    </button>
+                    <button
+                      className="delete-btn"
+                      onClick={() => handleDeleteUser(idx)}
+                    >
+                      Delete
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
           </table>
-
-          <button className="submit-btn" onClick={handleSubmit}>Submit</button>
+          <button className="submit-btn" onClick={handleSubmit}>
+            Submit
+          </button>
         </div>
       )}
+
+      <h3>All Environments Added By You</h3>
+      <div className="table-container">
+        <table>
+          <thead>
+            <tr>
+              <th>Cloud</th>
+              <th>Environment</th>
+              <th>RootId</th>
+              <th>ManagementUnit_ID</th>
+              <th>ServiceAccountName</th>
+
+            </tr>
+          </thead>
+          <tbody>
+            {envEntries.map((entry, idx) => (
+              <tr key={entry._id || idx}>
+                <td>{entry.cloudName}</td>
+                <td>{entry.environment}</td>
+                <td>{entry.rootId}</td>
+                <td>{entry.managementUnitId}</td>
+                <td>{entry.srvaccntName}</td>
+          
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 };

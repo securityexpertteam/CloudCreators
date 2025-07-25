@@ -18,6 +18,7 @@ def get_db():
     return db
 
 # Named collections
+usersEnvironmentOnboarding_collection = db["usersEnvironmentOnboarding"]
 users_collection = db["users"]
 resources_collection = db["newResourceDb"]
 standard_config_collection = db["standardConfigsDb"]  # <-- Corrected name

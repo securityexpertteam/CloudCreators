@@ -43,7 +43,7 @@ const SignIn = () => {
       if (response.ok) {
         localStorage.setItem("email", result.user.email); // <-- Save email for config logic!
         localStorage.setItem("user", JSON.stringify(result.user)); // optional: save full user
-        alert(result.message);
+        //alert(result.message);
         navigate("/userOnboarding");
         console.log("User signed in successfully:", result.user);
       } else {

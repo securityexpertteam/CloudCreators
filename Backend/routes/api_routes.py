@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException, Query
-from models import User, Resource, StandardConfig, SignupUser
-from database import users_collection, get_db, users_signup_collection
+from models import User,BulkSignupRequest, Resource, StandardConfig, SignupUser
+from database import users_collection,usersEnvironmentOnboarding_collection, get_db, users_signup_collection
 from fastapi.encoders import jsonable_encoder
 from typing import List, Optional
 import bcrypt
@@ -63,23 +63,27 @@ def get_latest_config(
 
 # ====User Onboarding routes============
 @router.post("/bulk_signup")
-def bulk_signup(users: List[User]):
+def bulk_signup(request: BulkSignupRequest):
+    users = request.users
+    login_id = request.login_id
     inserted_users = []
+
     for user in users:
-        existing = users_collection.find_one({
-            "$or": [
-                {"username": user.username},
-                {"password": user.password},
-                {"project": user.project}
-            ]
+        # Check for duplicates based on cloudName, environment, rootId, managementUnitId
+        existing = usersEnvironmentOnboarding_collection.find_one({
+            "cloudName": user.cloudName,
+            "environment": user.environment,
+            "rootId": user.rootId,
+            "managementUnitId": user.managementUnitId
         })
         if existing:
-            continue  # Skip if any of the fields already exist
+            continue
 
         user_dict = user.dict()
-        hashed_password = bcrypt.hashpw(user_dict["password"].encode("utf-8"), bcrypt.gensalt())
-        user_dict["password"] = hashed_password.decode("utf-8")
-        result = users_collection.insert_one(user_dict)
+        user_dict["LoginId"] = login_id
+        # Hash the service account password before storing
+        user_dict["srvacctPass"] = bcrypt.hashpw(user_dict["srvacctPass"].encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+        result = usersEnvironmentOnboarding_collection.insert_one(user_dict)
         user_dict["_id"] = str(result.inserted_id)
         inserted_users.append(user_dict)
 
@@ -92,4 +96,11 @@ def bulk_signup(users: List[User]):
     return {
         "message": f"{len(inserted_users)} users added to Environment successfully",
         "data": inserted_users
-    }
+    }    
+    
+@router.get("/environments/{login_id}")
+def get_environments(login_id: str):
+    entries = list(usersEnvironmentOnboarding_collection.find({"LoginId": login_id}))
+    for entry in entries:
+        entry["_id"] = str(entry["_id"])
+    return {"data": entries}    
