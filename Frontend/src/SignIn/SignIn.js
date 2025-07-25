@@ -42,8 +42,10 @@ const SignIn = () => {
       const result = await response.json();
 
       if (response.ok) {
+         localStorage.setItem("user", JSON.stringify(result.user)); // result.user should contain user details
         alert(result.message);
         navigate("/userOnboarding");
+        console.log("User signed in successfully:", result.user);
       } else {
         setError(result.detail || result.message || "Login failed");
       }

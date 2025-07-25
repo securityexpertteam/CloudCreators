@@ -75,7 +75,7 @@ const handleSubmit = async () => {
 
   return (
     <div className="container">
-      <h2>User Onboarding To Cloud Environment</h2>
+      <h2>Onboarding to Environment</h2>
 
       <div className="form-row">
         <div className="input-group">
@@ -151,22 +151,22 @@ const handleSubmit = async () => {
                 <th>Password</th>
                 <th>Actions</th>
               </tr>
-            </thead>
-            <tbody>
-              {usersList.map((u, idx) => (
-                <tr key={idx}>
-                  <td>{u.cloudName}</td>
-                  <td>{u.project}</td>
-                  <td>{u.environment}</td>
-                  <td>{u.username}</td>
-                  <td>{u.password}</td>
-                  <td>
-                    <button className="edit-btn" onClick={() => handleEditUser(idx)}>Edit</button>
-                    <button className="delete-btn" onClick={() => handleDeleteUser(idx)}>Delete</button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
+                </thead>
+      <tbody>
+      {usersList.map((u, idx) => (
+        <tr key={idx}>
+          <td>{u.cloudName}</td>
+          <td>{u.project}</td>
+          <td>{u.environment}</td>
+          <td>{u.username}</td>
+          <td>{"*".repeat(u.password.length)}</td> {/* Hide actual password */}
+          <td>
+            <button className="edit-btn" onClick={() => handleEditUser(idx)}>Edit</button>
+            <button className="delete-btn" onClick={() => handleDeleteUser(idx)}>Delete</button>
+          </td>
+        </tr>
+      ))}
+    </tbody>
           </table>
 
           <button className="submit-btn" onClick={handleSubmit}>Submit</button>

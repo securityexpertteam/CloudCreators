@@ -1,11 +1,14 @@
-
-import React from 'react';
+import React, { useState } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import './Header.css';
 import { FaRocket, FaUserCircle } from 'react-icons/fa';
 
 const Header = () => {
   const navigate = useNavigate();
+  const [showProfile, setShowProfile] = useState(false);
+
+  // Get user details from localStorage
+  const user = JSON.parse(localStorage.getItem("user"));
 
   return (
     <header className="header">
@@ -27,9 +30,17 @@ const Header = () => {
           </NavLink>
         </nav>
 
-        <div className="user-icon">
+        <div className="user-icon" onClick={() => setShowProfile(!showProfile)} style={{ cursor: "pointer" }}>
           <FaUserCircle size={24} />
         </div>
+        {showProfile && user && (
+          <div className="profile-modal">
+            <p><b>First Name:</b> {user.firstname}</p>
+            <p><b>Last Name:</b> {user.lastname}</p>
+            <p><b>Email:</b> {user.email}</p>
+            <button onClick={() => setShowProfile(false)}>Close</button>
+          </div>
+        )}
       </div>
     </header>
   );
