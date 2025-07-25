@@ -2,172 +2,259 @@ import React, { useState, useEffect } from "react";
 import axios from "axios";
 import "./StandardConfigForm.css";
 
+const CONFIG_TYPES = [
+  {
+    key: "compute_engine",
+    label: "Compute Engine",
+    fields: [
+      { name: "cpu_usage", label: "CPU Usage (%)", type: "percentage" },
+      { name: "memory_usage", label: "Memory Usage (%)", type: "percentage" },
+      { name: "network_usage", label: "Network Usage (%)", type: "percentage" },
+    ],
+  },
+  {
+    key: "kubernetes",
+    label: "Kubernetes",
+    fields: [
+      { name: "node_cpu_percentage", label: "Node CPU Usage (%)", type: "percentage" },
+      { name: "node_memory_percentage", label: "Node Memory Usage (%)", type: "percentage" },
+      { name: "node_count", label: "Number of Nodes", type: "number" },
+      { name: "volume_percentage", label: "Persistent Volume Usage (%)", type: "percentage" },
+    ],
+  },
+  {
+    key: "cloud_storage",
+    label: "Cloud Storage",
+    fields: [
+      { name: "storage_size", label: "Total Storage Size (GB/TB)", type: "number" },
+      { name: "access_frequency", label: "Access Frequency", type: "dropdown", options: ["Hot", "Cold"] },
+      { name: "network_egress", label: "Network Egress (GB)", type: "number" },
+      { name: "lifecycle_enabled", label: "Lifecycle Policies Enabled?", type: "checkbox" },
+    ],
+  },
+  {
+    key: "general",
+    label: "General Configuration",
+    fields: [
+      { name: "untagged", label: "Include Untagged Resources", type: "checkbox" },
+      { name: "orphaned", label: "Include Orphaned Resources", type: "checkbox" },
+    ],
+  },
+];
+
 function StandardConfigForm() {
-  const [cpu, setCpu] = useState("");
-  const [memory, setMemory] = useState("");
-  const [network, setNetwork] = useState("");
-  const [untagged, setUntagged] = useState(false);
-  const [orphaned, setOrphaned] = useState(false);
+  const [selectedType, setSelectedType] = useState(CONFIG_TYPES[0].key);
+  const [formValues, setFormValues] = useState({});
   const [message, setMessage] = useState("");
   const [configData, setConfigData] = useState(null);
 
+  const currentTypeObj = CONFIG_TYPES.find((ct) => ct.key === selectedType);
+
+  // Get user email from localStorage with key 'email'
+  const email = localStorage.getItem("email");
+
   useEffect(() => {
-    handleShowData();
-  }, []);
+    setFormValues({});
+    setMessage("");
+    fetchLatestConfig();
+    // eslint-disable-next-line
+  }, [selectedType]);
 
-  const handleInput = (value, setter) => {
-    const num = parseInt(value, 10);
-    if (!value) {
-      setter(""); // allow clearing
-    } else if (!isNaN(num) && num >= 1 && num <= 100) {
-      setter(num);
-    }
-  };
-
-  const handleSubmit = async () => {
-    if (
-      cpu === "" || memory === "" || network === "" ||
-      cpu < 1 || cpu > 100 ||
-      memory < 1 || memory > 100 ||
-      network < 1 || network > 100
-    ) {
-      setMessage("❗ CPU, Memory, and Network usage must be between 1 and 100.");
-      return;
-    }
-
+  const fetchLatestConfig = async () => {
     try {
-      const payload = {
-        cpu_usage: parseInt(cpu),
-        memory_usage: parseInt(memory),
-        network_usage: parseInt(network),
-        untagged,
-        orphaned,
-      };
-
-      await axios.post("http://localhost:8000/api/configs", payload);
-      setMessage("✅ Standard configuration data updated successfully");
-      handleShowData();
+      // Send both type and email as query params!
+      const res = await axios.get(
+        `http://localhost:8000/api/config/latest?type=${selectedType}&email=${encodeURIComponent(email)}`
+      );
+      setConfigData(res.data || {});
+      const initialValues = {};
+      currentTypeObj.fields.forEach((field) => {
+        initialValues[field.name] = res.data?.[field.name] ?? (field.type === "checkbox" ? false : "");
+      });
+      setFormValues(initialValues);
     } catch (err) {
-      console.error("Submission error:", err);
-      setMessage("❌ Failed to submit configuration.");
-    }
-  };
-
-  const handleShowData = async () => {
-    try {
-      const res = await axios.get("http://localhost:8000/api/config/latest");
-      setConfigData(res.data);
-      setCpu(res.data.cpu_usage || "");
-      setMemory(res.data.memory_usage || "");
-      setNetwork(res.data.network_usage || "");
-      setUntagged(res.data.untagged || false);
-      setOrphaned(res.data.orphaned || false);
-    } catch (err) {
-      console.error("Error fetching config data:", err);
+      setConfigData(null);
       setMessage("❌ Failed to fetch configuration data.");
     }
   };
 
-  const displayValue = (value) => {
-    if (value === null || value === undefined || value === "") {
-      return "None";
+  const validateInput = (field, value) => {
+    if (field.type === "percentage") {
+      if (!value) return "";
+      const num = parseInt(value, 10);
+      if (!isNaN(num) && num >= 1 && num <= 100) return num;
+      return formValues[field.name] || "";
     }
-    return typeof value === "boolean" ? (value ? "Yes" : "No") : value;
+    if (field.type === "number") {
+      if (!value) return "";
+      const num = parseInt(value, 10);
+      return !isNaN(num) && num >= 0 ? num : formValues[field.name] || "";
+    }
+    return value;
   };
+
+  const handleInputChange = (field, value) => {
+    setFormValues((prev) => ({
+      ...prev,
+      [field.name]: validateInput(field, value),
+    }));
+  };
+
+  const handleSubmit = async () => {
+    let invalid = false;
+    currentTypeObj.fields.forEach((field) => {
+      if (field.type === "percentage") {
+        const val = formValues[field.name];
+        if (val === "" || val > 100 || val < 1) {
+          invalid = true;
+        }
+      }
+    });
+    if (invalid) {
+      setMessage("❗ Percentage fields must be between 1 and 100.");
+      return;
+    }
+
+    const payload = { 
+      type: selectedType,
+      email: email // use lowercase 'email' from localStorage!
+    };
+    currentTypeObj.fields.forEach((field) => {
+      payload[field.name] = formValues[field.name];
+    });
+
+    try {
+      await axios.post("http://localhost:8000/api/configs", payload);
+      setMessage("✅ Configuration updated successfully");
+      fetchLatestConfig(); // Load fresh config for user/type
+    } catch (err) {
+      setMessage("❌ Failed to submit configuration.");
+    }
+  };
+
+  const displayValue = (value, type) => {
+    if (value === null || value === undefined || value === "") return "None";
+    if (type === "checkbox") return value ? "Yes" : "No";
+    return value;
+  };
+
+  // Only show toggle frame for Cloud Storage or General Configuration
+  const showToggleOptions =
+    selectedType === "cloud_storage" || selectedType === "general";
 
   return (
     <div className="App">
-
       <h1>Standard Configuration</h1>
+      <div className="button-group" style={{ justifyContent: "center", marginBottom: "2rem" }}>
+        {CONFIG_TYPES.map((ct) => (
+          <button
+            key={ct.key}
+            className={selectedType === ct.key ? "primary-btn" : "secondary-btn"}
+            onClick={() => setSelectedType(ct.key)}
+            style={{ minWidth: "170px" }}
+          >
+            {ct.label}
+          </button>
+        ))}
+      </div>
 
       <div className="config-card">
-        <div className="input-row">
-          <div className="input-field">
-            <label>CPU Usage (%)</label>
-            <input
-              type="number"
-              value={cpu}
-              onChange={(e) => handleInput(e.target.value, setCpu)}
-              min="1"
-              max="100"
-              placeholder="Enter CPU %"
-            />
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            handleSubmit();
+          }}
+        >
+          <div className="input-row" style={{ flexWrap: "wrap" }}>
+            {currentTypeObj.fields.map((field) =>
+              field.type === "checkbox" ? null : (
+                <div className="input-field" key={field.name}>
+                  <label>{field.label}</label>
+                  {field.type === "dropdown" ? (
+                    <select
+                      value={formValues[field.name] || ""}
+                      onChange={(e) =>
+                        handleInputChange(field, e.target.value)
+                      }
+                      style={{ padding: "10px 12px", borderRadius: "10px", border: "1px solid #d0d5dd", backgroundColor: "#f9fafb" }}
+                    >
+                      <option value="">Select</option>
+                      {field.options.map((opt) => (
+                        <option key={opt} value={opt}>
+                          {opt}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <input
+                      type="number"
+                      value={formValues[field.name] ?? ""}
+                      onChange={(e) =>
+                        handleInputChange(field, e.target.value)
+                      }
+                      min={field.type === "percentage" ? 1 : 0}
+                      max={field.type === "percentage" ? 100 : undefined}
+                      placeholder={`Enter ${field.label}`}
+                    />
+                  )}
+                </div>
+              )
+            )}
           </div>
-          <div className="input-field">
-            <label>Memory Usage (%)</label>
-            <input
-              type="number"
-              value={memory}
-              onChange={(e) => handleInput(e.target.value, setMemory)}
-              min="1"
-              max="100"
-              placeholder="Enter Memory %"
-            />
+
+          {showToggleOptions && (
+            <div className="toggle-options">
+              {currentTypeObj.fields
+                .filter((field) => field.type === "checkbox")
+                .map((field) => (
+                  <label className="toggle-label" key={field.name}>
+                    <input
+                      type="checkbox"
+                      checked={!!formValues[field.name]}
+                      onChange={(e) =>
+                        handleInputChange(field, e.target.checked)
+                      }
+                    />
+                    <span>{field.label}</span>
+                  </label>
+                ))}
+            </div>
+          )}
+
+          <div className="button-group">
+            <button
+              type="button"
+              className="secondary-btn"
+              onClick={fetchLatestConfig}
+            >
+              Show Data
+            </button>
+            <button type="submit" className="primary-btn">
+              Update
+            </button>
           </div>
-          <div className="input-field">
-            <label>Network Usage (%)</label>
-            <input
-              type="number"
-              value={network}
-              onChange={(e) => handleInput(e.target.value, setNetwork)}
-              min="1"
-              max="100"
-              placeholder="Enter Network %"
-            />
-          </div>
-        </div>
-
-        <div className="toggle-options">
-          <label>
-            <input
-              type="checkbox"
-              checked={untagged}
-              onChange={(e) => setUntagged(e.target.checked)}
-            />
-            Include Untagged Resources
-          </label>
-
-          <label>
-            <input
-              type="checkbox"
-              checked={orphaned}
-              onChange={(e) => setOrphaned(e.target.checked)}
-            />
-            Include Orphaned Resources
-          </label>
-        </div>
-
-        <div className="button-group">
-          <button className="secondary-btn" onClick={handleShowData}>
-            Show Data
-          </button>
-          <button className="primary-btn" onClick={handleSubmit}>
-            Update
-          </button>
-        </div>
-
+        </form>
         {message && <p>{message}</p>}
       </div>
 
+      {/* Latest config data table */}
       <div style={{ width: "100%", maxWidth: "900px", marginTop: "3rem" }}>
         {configData && (
           <table className="config-table">
             <thead>
               <tr>
-                <th>CPU (%)</th>
-                <th>Memory (%)</th>
-                <th>Network (%)</th>
-                <th>Untagged</th>
-                <th>Orphaned</th>
+                {currentTypeObj.fields.map((field) => (
+                  <th key={field.name}>{field.label}</th>
+                ))}
               </tr>
             </thead>
             <tbody>
               <tr>
-                <td>{displayValue(configData.cpu_usage)}</td>
-                <td>{displayValue(configData.memory_usage)}</td>
-                <td>{displayValue(configData.network_usage)}</td>
-                <td>{displayValue(configData.untagged)}</td>
-                <td>{displayValue(configData.orphaned)}</td>
+                {currentTypeObj.fields.map((field) => (
+                  <td key={field.name}>
+                    {displayValue(configData[field.name], field.type)}
+                  </td>
+                ))}
               </tr>
             </tbody>
           </table>

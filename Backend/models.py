@@ -1,7 +1,5 @@
 from pydantic import BaseModel
 from typing import Optional
-from typing import List
-from datetime import datetime
 
 class User(BaseModel):
     username: str
@@ -21,18 +19,31 @@ class Resource(BaseModel):
     untagged_instances: str
     orphaned_vms: int
 
-# ✅ New model for /config form submissions
-
-
 class StandardConfig(BaseModel):
+    email: str  # <-- Store user's email with every config!
+    type: str
+
+    # Fields for Compute Engine
     cpu_usage: Optional[int] = None
     memory_usage: Optional[int] = None
     network_usage: Optional[int] = None
-    untagged: Optional[bool] = False
-    orphaned: Optional[bool] = False
 
-# signin
+    # Fields for Kubernetes
+    node_cpu_percentage: Optional[int] = None
+    node_memory_percentage: Optional[int] = None
+    node_count: Optional[int] = None
+    volume_percentage: Optional[int] = None
+
+    # Fields for Cloud Storage
+    storage_size: Optional[int] = None
+    access_frequency: Optional[str] = None
+    network_egress: Optional[int] = None
+    lifecycle_enabled: Optional[bool] = None
+
+    # Fields for General Configuration
+    untagged: Optional[bool] = None
+    orphaned: Optional[bool] = None
 
 class SignupUser(BaseModel):
     email: str
-    password: str    
+    password: str

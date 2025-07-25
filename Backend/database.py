@@ -20,5 +20,5 @@ def get_db():
 # Named collections
 users_collection = db["users"]
 resources_collection = db["newResourceDb"]
-standard_config_collection = db["standardConfigDb"]  # ✅ NEW
-users_signup_collection=db["signupdata"]
+standard_config_collection = db["standardConfigsDb"]  # <-- Corrected name
+users_signup_collection = db["signupdata"]

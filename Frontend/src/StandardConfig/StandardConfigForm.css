@@ -10,10 +10,9 @@ body, html {
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 1rem 1rem; /* 🔽 reduced top padding */
+  padding: 1rem 1rem;
   min-height: 100vh;
 }
-
 
 /* Heading */
 h1 {
@@ -59,7 +58,8 @@ h1 {
   margin-bottom: 0.5rem;
 }
 
-.input-field input {
+.input-field input,
+.input-field select {
   padding: 10px 12px;
   border-radius: 10px;
   border: 1px solid #d0d5dd;
@@ -68,7 +68,8 @@ h1 {
   transition: border 0.3s ease;
 }
 
-.input-field input:focus {
+.input-field input:focus,
+.input-field select:focus {
   border-color: #3b82f6;
   outline: none;
 }
@@ -79,7 +80,7 @@ h1 {
   flex-direction: column;
   gap: 1rem;
   margin-top: 1.5rem;
-  margin-bottom: 1.5rem; /* 🔥 Added to fix spacing */
+  margin-bottom: 1.5rem;
   padding: 1rem;
   background-color: #f8fafc;
   border: 1px solid #e2e8f0;
@@ -95,45 +96,70 @@ h1 {
 }
 
 .toggle-label span {
-  font-weight: 600; /* Makes the label text bold */
-  
+  font-weight: 600;
 }
 
-
-/* Buttons */
+/* Enhanced Button Group */
 .button-group {
   display: flex;
-  justify-content: flex-end;
+  justify-content: center;
   gap: 1.5rem;
+  margin-bottom: 2rem;
+  background: #f0f4ff;
+  padding: 0.6rem 0;
+  border-radius: 14px;
+  box-shadow: 0 2px 8px rgba(36, 86, 231, 0.04);
 }
 
+/* Common Button Style */
 button {
-  padding: 8px 16px;
-  font-size: 0.95rem;
+  padding: 10px 24px;
+  font-size: 1.07rem;
   font-weight: 600;
   border: none;
   border-radius: 8px;
   cursor: pointer;
-  transition: background-color 0.3s ease;
+  transition:
+    background-color 0.2s,
+    color 0.2s,
+    box-shadow 0.2s,
+    transform 0.1s;
+  box-shadow: 0 2px 8px rgba(36, 86, 231, 0.08);
+  outline: none;
 }
 
+/* Selected/Primary Button */
 .primary-btn {
   background-color: #2563eb;
   color: white;
+  box-shadow: 0 4px 16px rgba(36, 86, 231, 0.12);
+  border: 2px solid #1d4ed8;
+  transform: scale(1.05);
+  z-index: 1;
 }
 
-.primary-btn:hover {
+.primary-btn:hover,
+.primary-btn:focus {
   background-color: #1d4ed8;
+  box-shadow: 0 6px 24px rgba(36, 86, 231, 0.15);
+  transform: scale(1.07);
 }
 
+/* Not Selected/Secondary Button */
 .secondary-btn {
-  background-color: transparent;
+  background: white;
   color: #2563eb;
-  border: 2px solid #2563eb;
+  border: 2px solid #d0d5dd;
+  box-shadow: 0 1px 4px rgba(36, 86, 231, 0.04);
 }
 
-.secondary-btn:hover {
-  background-color: #f0f4ff;
+.secondary-btn:hover,
+.secondary-btn:focus {
+  background-color: #e7f0ff;
+  color: #1d4ed8;
+  border-color: #2563eb;
+  transform: scale(1.04);
+  box-shadow: 0 2px 8px rgba(36, 86, 231, 0.09);
 }
 
 /* Message */

@@ -8,7 +8,7 @@ const SignIn = () => {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const navigate = useNavigate();
- const [formData, setFormData] = useState({
+  const [formData, setFormData] = useState({
     firstname: "",
     lastname: "",
     email: "",
@@ -17,7 +17,6 @@ const SignIn = () => {
     profilePic: null,
   });
 
-  
   const handleChange = (e) => {
     const { name, value, files } = e.target;
     if (name === "profilePic") {
@@ -42,7 +41,8 @@ const SignIn = () => {
       const result = await response.json();
 
       if (response.ok) {
-         localStorage.setItem("user", JSON.stringify(result.user)); // result.user should contain user details
+        localStorage.setItem("email", result.user.email); // <-- Save email for config logic!
+        localStorage.setItem("user", JSON.stringify(result.user)); // optional: save full user
         alert(result.message);
         navigate("/userOnboarding");
         console.log("User signed in successfully:", result.user);
@@ -61,20 +61,16 @@ const SignIn = () => {
     <div className="signin-container">
       <form className="signin-form" onSubmit={handleSignin}>
         <div className="signin-header">
-           <div className="profile-upload">
-          <input type="file" id="profilePic" name="profilePic" onChange={handleChange} hidden />
-          <label htmlFor="profilePic" className="upload-label" style={{ fontSize: "40px", cursor: "pointer" }}>
-  ☁️
-            
-          </label>
-        </div>
-
+          <div className="profile-upload">
+            <input type="file" id="profilePic" name="profilePic" onChange={handleChange} hidden />
+            <label htmlFor="profilePic" className="upload-label" style={{ fontSize: "40px", cursor: "pointer" }}>
+              ☁️
+            </label>
+          </div>
           <h2>Welcome Back</h2>
           <p className="subtitle">Sign in to your account to continue</p>
         </div>
-
         {error && <div className="signin-error">{error}</div>}
-
         <div className="field">
           <label htmlFor="email"><b>Email Address</b></label>
           <input
@@ -86,7 +82,6 @@ const SignIn = () => {
             onChange={(e) => setEmail(e.target.value)}
           />
         </div>
-
         <div className="field">
           <label htmlFor="password"><b>Password</b></label>
           <input
@@ -98,17 +93,15 @@ const SignIn = () => {
             onChange={(e) => setPassword(e.target.value)}
           />
         </div>
-
         <div className="forgot-password">
           <button
-          type="button"
-          className="forgot-password-button"
-          onClick={() => alert("Forgot Password feature coming soon!")}
+            type="button"
+            className="forgot-password-button"
+            onClick={() => alert("Forgot Password feature coming soon!")}
           >
             Forgot your password?
           </button>
         </div>
-
         <button type="submit" className="signin-button" disabled={submitting}>
           {submitting ? "Signing In..." : "Sign In"}
         </button>
@@ -118,4 +111,3 @@ const SignIn = () => {
 };
 
 export default SignIn;
-
