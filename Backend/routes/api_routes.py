@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException, Query,Request
-from models import User,BulkSignupRequest, Resource, StandardConfig, SignupUser
-from database import users_collection,usersEnvironmentOnboarding_collection, get_db, users_signup_collection
+from models import User,BulkSignupRequest, Resource, StandardConfig, SignupUser , Trigger
+from database import users_collection,usersEnvironmentOnboarding_collection, get_db, users_signup_collection, resources_collection , triggers_collection
 from fastapi.encoders import jsonable_encoder
 from typing import List, Optional
 import bcrypt
@@ -10,7 +10,29 @@ import base64
 
 router = APIRouter()
 
+from database import get_db
+
 # === USER SIGNUP ===
+# === GET ALL RESOURCES FOR DASHBOARD ===
+@router.get("/api/resources")
+def get_resources():
+    db = get_db()
+    resources_collection = db["Cost_Insights"]
+    resources = list(resources_collection.find())
+    for r in resources:
+        r["_id"] = str(r["_id"])
+    return resources
+
+@router.post("/triggers")
+async def create_trigger(trigger: Trigger):
+    # trigger.scheduled_time is a datetime object (date and time)
+    data = trigger.dict()
+    # Optionally, convert datetime to ISO string for MongoDB
+    data["scheduled_time"] = data["scheduled_time"].isoformat()
+    result = triggers_collection.insert_one(data)
+    data["_id"] = str(result.inserted_id)
+    return {"message": "Schedule saved", "data": data}
+
 @router.post("/signin")
 def signin(user: SignupUser):
     existing_user = users_signup_collection.find_one({
