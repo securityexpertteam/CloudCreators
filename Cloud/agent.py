@@ -35,7 +35,7 @@ try:
                 
                 # Check users collection for CloudName
                 user = users_collection.find().sort("_id", -1).limit(1)[0]
-                cloud_name = user.get('CloudName')
+                cloud_name = user.get('cloudName')
                 if cloud_name == 'Azure':
                     print(f"   🔵 Running Azure script")
                     subprocess.run(["python", r"C:\Users\dasar\OneDrive\Documents\cloud_optimisation\az.py"])
