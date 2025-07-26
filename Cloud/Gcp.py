@@ -42,15 +42,53 @@ except ImportError:
 # CONFIGURATION
 # ================================================================================
 
-# Set your GCP project ID and credentials file path
-PROJECT_ID = "pro-plasma-465515-k1"
-CREDENTIALS_PATH = r"C:\Users\dasar\OneDrive\Documents\cloud_optimisation\pro-plasma-465515-k1-833ec1affeb6.json"
-
 # MongoDB Configuration
 MONGODB_HOST = "localhost"  # Change this to your MongoDB server IP/hostname
 MONGODB_PORT = 27017        # Change this to your MongoDB port
 MONGODB_DATABASE = "myDB"   # Change this to your database name
 MONGODB_COLLECTION = "Cost_Insights"  # Change this to your collection name
+
+def get_project_id_from_mongodb():
+    """
+    Fetch the PROJECT_ID from MongoDB users collection.
+    
+    Returns:
+        str: Project ID from ManagementUnit field, or None if not found
+    """
+    if not MONGODB_AVAILABLE:
+        print("❌ pymongo not available. Cannot fetch PROJECT_ID from MongoDB.")
+        return None
+    
+    try:
+        # Connect to MongoDB
+        client = MongoClient(host=MONGODB_HOST, port=MONGODB_PORT)
+        db = client[MONGODB_DATABASE]
+        users_collection = db['users']
+        
+        # Get the latest user record (you can modify this query as needed)
+        user_record = users_collection.find_one(sort=[('_id', -1)])  # Get latest record
+        
+        if user_record and 'ManagementUnit' in user_record:
+            project_id = user_record['ManagementUnit']
+            print(f"✅ Retrieved PROJECT_ID from MongoDB: {project_id}")
+            client.close()
+            return project_id
+        else:
+            print("❌ No ManagementUnit found in users collection")
+            client.close()
+            return None
+            
+    except Exception as e:
+        print(f"❌ Error fetching PROJECT_ID from MongoDB: {e}")
+        return None
+
+# Get PROJECT_ID from MongoDB or fallback to hardcoded value
+PROJECT_ID = get_project_id_from_mongodb()
+if not PROJECT_ID:
+    PROJECT_ID = "pro-plasma-465515-k1"  # Fallback to hardcoded value
+    print(f"⚠️  Using fallback PROJECT_ID: {PROJECT_ID}")
+
+CREDENTIALS_PATH = r"C:\Users\dasar\OneDrive\Documents\cloud_optimisation\pro-plasma-465515-k1-833ec1affeb6.json"
 
 # Analysis configuration
 DISK_QUOTA_GB = 100  # Disk quota for utilization calculation
