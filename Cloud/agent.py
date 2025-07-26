@@ -41,7 +41,7 @@ try:
                     subprocess.run(["python", "Az.py"])
                 elif cloud_name == 'GCP':
                     print(f"   🟡 Running GCP script")
-                    subprocess.run(["python", r"C:\Users\dasar\OneDrive\Documents\cloud_optimisation\gcp.py"])
+                    subprocess.run(["python", "Gcp.py"])
                 else:
                     print(f"   ❓ Unknown CloudName: {cloud_name}")
         else:
