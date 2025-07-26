@@ -62,10 +62,10 @@ def get_latest_config(
     return config
 
 # ====User Onboarding routes============
-@router.post("/bulk_signup")
+@router.post("/environment_onboarding")
 def bulk_signup(request: BulkSignupRequest):
-    users = request.users
-    login_id = request.login_id
+    email = request.email
+    users = request.users 
     inserted_users = []
 
     for user in users:
@@ -80,7 +80,7 @@ def bulk_signup(request: BulkSignupRequest):
             continue
 
         user_dict = user.dict()
-        user_dict["LoginId"] = login_id
+        user_dict["email"] = email
         # Hash the service account password before storing
         user_dict["srvacctPass"] = bcrypt.hashpw(user_dict["srvacctPass"].encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
         result = usersEnvironmentOnboarding_collection.insert_one(user_dict)
@@ -98,9 +98,9 @@ def bulk_signup(request: BulkSignupRequest):
         "data": inserted_users
     }    
     
-@router.get("/environments/{login_id}")
-def get_environments(login_id: str):
-    entries = list(usersEnvironmentOnboarding_collection.find({"LoginId": login_id}))
+@router.get("/environments/{email}")
+def get_environments(email: str):
+    entries = list(usersEnvironmentOnboarding_collection.find({"email": email}))
     for entry in entries:
         entry["_id"] = str(entry["_id"])
     return {"data": entries}    
