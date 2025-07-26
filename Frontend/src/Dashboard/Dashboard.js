@@ -1,16 +1,20 @@
-
 import React, { useEffect, useState } from "react";
 import axios from "axios";
 import "./Dashboard.css";
+import { Bar } from "react-chartjs-2";
+import { Chart, BarElement, CategoryScale, LinearScale, Tooltip, Legend } from "chart.js";
+Chart.register(BarElement, CategoryScale, LinearScale, Tooltip, Legend);
 
 function Dashboard() {
   const [resources, setResources] = useState([]);
   const [filteredResources, setFilteredResources] = useState([]);
+  const [cioCostSummary, setCioCostSummary] = useState([]);
+  const [entityCostSummary, setEntityCostSummary] = useState([]);
   const [filters, setFilters] = useState({
-    cpu_usage: "",
-    memory_usage: "",
-    network_usage: "",
-    orphaned_vms: "",
+    CIO: "",
+    ResourceType: "",
+    Region: "",
+    TotalCost: "",
   });
   const [showFilter, setShowFilter] = useState(false);
 
@@ -19,6 +23,30 @@ function Dashboard() {
       .then((res) => {
         setResources(res.data);
         setFilteredResources(res.data);
+
+        // Aggregate cost by CIO
+        const cioSummary = res.data.reduce((acc, curr) => {
+          if (!curr.CIO || !curr.TotalCost) return acc;
+          acc[curr.CIO] = (acc[curr.CIO] || 0) + Number(curr.TotalCost);
+          return acc;
+        }, {});
+        const cioSummaryArray = Object.entries(cioSummary).map(([cio, cost]) => ({
+          cio,
+          cost: cost.toFixed(6),
+        }));
+        setCioCostSummary(cioSummaryArray);
+
+        // Aggregate cost by Entity
+        const entitySummary = res.data.reduce((acc, curr) => {
+          if (!curr.Entity || !curr.TotalCost) return acc;
+          acc[curr.Entity] = (acc[curr.Entity] || 0) + Number(curr.TotalCost);
+          return acc;
+        }, {});
+        // Sort descending by cost
+        const entitySummaryArray = Object.entries(entitySummary)
+          .map(([entity, cost]) => ({ entity, cost: cost }))
+          .sort((a, b) => b.cost - a.cost);
+        setEntityCostSummary(entitySummaryArray);
       })
       .catch((err) => console.error(err));
   }, []);
@@ -33,10 +61,10 @@ function Dashboard() {
   const applyFilter = () => {
     const filtered = resources.filter((item) => {
       return (
-        (filters.cpu_usage === "" || item.cpu_usage <= parseInt(filters.cpu_usage)) &&
-        (filters.memory_usage === "" || item.memory_usage <= parseInt(filters.memory_usage)) &&
-        (filters.network_usage === "" || item.network_usage <= parseInt(filters.network_usage)) &&
-        (filters.orphaned_vms === "" || item.orphaned_vms <= parseInt(filters.orphaned_vms))
+        (filters.CIO === "" || item.CIO === filters.CIO) &&
+        (filters.ResourceType === "" || item.ResourceType === filters.ResourceType) &&
+        (filters.Region === "" || item.Region === filters.Region) &&
+        (filters.TotalCost === "" || item.TotalCost <= parseFloat(filters.TotalCost))
       );
     });
     setFilteredResources(filtered);
@@ -44,84 +72,128 @@ function Dashboard() {
 
   const clearFilters = () => {
     setFilters({
-      cpu_usage: "",
-      memory_usage: "",
-      network_usage: "",
-      orphaned_vms: "",
+      CIO: "",
+      ResourceType: "",
+      Region: "",
+      TotalCost: "",
     });
     setFilteredResources(resources);
   };
 
   return (
     <div className="App">
-      <div>
-        <h1>Cloud Resource Dashboard</h1>
-      </div>
-      <button className="filter-btn" onClick={() => setShowFilter(!showFilter)}>
-          {showFilter ? "Hide Filter" : "Filter"}
-        </button>
-
       {showFilter && (
         <div className="filter-form">
           <input
-            type="number"
-            name="cpu_usage"
-            value={filters.cpu_usage}
+            type="text"
+            name="CIO"
+            value={filters.CIO}
             onChange={handleInputChange}
-            placeholder="CPU Usage"
+            placeholder="CIO"
+          />
+          <input
+            type="text"
+            name="ResourceType"
+            value={filters.ResourceType}
+            onChange={handleInputChange}
+            placeholder="Resource Type"
+          />
+          <input
+            type="text"
+            name="Region"
+            value={filters.Region}
+            onChange={handleInputChange}
+            placeholder="Region"
           />
           <input
             type="number"
-            name="memory_usage"
-            value={filters.memory_usage}
+            name="TotalCost"
+            value={filters.TotalCost}
             onChange={handleInputChange}
-            placeholder="Memory Usage"
-          />
-          <input
-            type="number"
-            name="network_usage"
-            value={filters.network_usage}
-            onChange={handleInputChange}
-            placeholder="Network Usage"
-          />
-          <input
-            type="number"
-            name="orphaned_vms"
-            value={filters.orphaned_vms}
-            onChange={handleInputChange}
-            placeholder="Orphaned VMs"
+            placeholder="Max Total Cost"
           />
           <button onClick={applyFilter}>Apply</button>
           <button onClick={clearFilters}>Clear</button>
         </div>
       )}
 
+      <h2>CIO Operational Cost Summary</h2>
       <table>
         <thead>
           <tr>
-            <th>Resource ID</th>
-            <th>Provider</th>
-            <th>Type</th>
-            <th>CPU (%)</th>
-            <th>Memory (%)</th>
-            <th>Network (MB)</th>
-            <th>Scale Down</th>
-            <th>Untagged</th>
-            <th>Orphaned VMs</th>
+            <th>CIO</th>
+            <th>Total Cost (USD)</th>
+          </tr>
+        </thead>
+        <tbody>
+          {cioCostSummary.map((row, idx) => (
+            <tr key={idx}>
+              <td>{row.cio}</td>
+              <td>{row.cost}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+
+      <h2>Entity-wise Total Cost (Descending)</h2>
+      <div style={{ maxWidth: "600px", margin: "0 auto" }}>
+        <Bar
+          data={{
+            labels: entityCostSummary.map((e) => e.entity),
+            datasets: [
+              {
+                label: "Total Cost (USD)",
+                data: entityCostSummary.map((e) => e.cost),
+                backgroundColor: "#4287f5",
+              },
+            ],
+          }}
+          options={{
+            plugins: {
+              legend: { display: false },
+              tooltip: { enabled: true },
+            },
+            scales: {
+              y: { beginAtZero: true },
+            },
+          }}
+        />
+      </div>
+
+      <h2>Resource Details</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Resource Name</th>
+            <th>CIO</th>
+            <th>Resource Type</th>
+            <th>Region</th>
+            <th>Total Cost</th>
+            <th>Owner</th>
+       
+            <th>Current Size</th>
+            <th>Finding</th>
+            <th>Recommendation</th>
+            <th>Entity</th>
+            <th>Status</th>
+            {/* Add more columns as needed */}
           </tr>
         </thead>
         <tbody>
           {filteredResources.map((r, i) => (
             <tr key={i}>
-              <td>{r.resource_id}</td>
-              <td>{r.provider}</td>
-              <td>{r.resource_type}</td>
-              <td>{r.cpu_usage}</td>
-              <td>{r.memory_usage}</td>
-              <td>{r.network_usage}</td>
-              <td>{r.scale_down_recommendation}</td>
-              <td>{r.untagged_instances}</td>
-              <td>{r.orphaned_vms}</td>
+              <td>{r.ResourceName}</td>
+              <td>{r.CIO}</td>
+              <td>{r.ResourceType}</td>
+              <td>{r.Region}</td>
+              <td>{r.TotalCost}</td>
+              <td>{r.Owner}</td>
+              <td>{r.Current_Size}</td>
+              <td>{r.Finding}</td>
+              <td>{r.Recommendation}</td>
+              <td>{r.Entity}</td>
+              <td>{r.Status}</td>
+              {/* Add more fields as needed */}
             </tr>
           ))}
         </tbody>
