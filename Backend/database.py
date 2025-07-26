@@ -20,6 +20,7 @@ def get_db():
 # Named collections
 usersEnvironmentOnboarding_collection = db["environmentOnboarding"]
 users_collection = db["users"]
-resources_collection = db["newResourceDb"]
+resources_collection = db["Cost_Insights"]
 standard_config_collection = db["standardConfigsDb"]  # <-- Corrected name
 users_signup_collection = db["signupdata"]
+triggers_collection = db["triggers"]

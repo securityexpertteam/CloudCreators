@@ -1,6 +1,7 @@
 from pydantic import BaseModel
 from typing import Optional
 from typing import List
+from datetime import datetime
 
 class User(BaseModel):
     cloudName: str
@@ -12,20 +13,41 @@ class User(BaseModel):
     email: str = None
     gcpJsonFile: Optional[str] = None  # <-- Add this field
 
+class Trigger(BaseModel):
+    scheduled_time: datetime
+
 class BulkSignupRequest(BaseModel):
     users: List[User]
     email: str  
 
 class Resource(BaseModel):
-    resource_id: str
-    provider: str
-    resource_type: str
-    cpu_usage: int
-    memory_usage: int
-    network_usage: int
-    scale_down_recommendation: str
-    untagged_instances: str
-    orphaned_vms: int
+    _id: str
+    CloudProvider: str
+    ManagementUnits: str
+    ApplicationCode: str
+    CostCenter: str
+    CIO: str
+    Platform: str
+    Lab: str
+    Feature: str
+    Owner: str
+    TicketId: str
+    ResourceType: str
+    SubResourceType: str
+    ResourceName: str
+    Region: str
+    TotalCost: float
+    Currency: str
+    Current_Size: str
+    Finding: str
+    Recommendation: str
+    Environment: str
+    Timestamp: str
+    ConfidenceScore: str
+    Status: str
+    Entity: str
+    RootId: str
+    Email: Optional[str] = None
 
 class StandardConfig(BaseModel):
     email: str  # <-- Store user's email with every config!
