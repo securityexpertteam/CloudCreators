@@ -38,7 +38,7 @@ try:
                 cloud_name = user.get('cloudName')
                 if cloud_name == 'Azure':
                     print(f"   🔵 Running Azure script")
-                    subprocess.run(["python", r"C:\Users\dasar\OneDrive\Documents\cloud_optimisation\az.py"])
+                    subprocess.run(["python", "Az.py"])
                 elif cloud_name == 'GCP':
                     print(f"   🟡 Running GCP script")
                     subprocess.run(["python", r"C:\Users\dasar\OneDrive\Documents\cloud_optimisation\gcp.py"])
