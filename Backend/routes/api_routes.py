@@ -101,6 +101,62 @@ def get_latest_config(
 #         "data": inserted_users
 #     }
 
+# @router.post("/environment_onboarding")
+# async def environment_onboarding(request: Request):
+#     data = await request.json()
+#     email = data.get("email")
+#     users = data.get("users", [])
+#     cred_folder = os.path.join(os.getcwd(), "Creds")
+#     os.makedirs(cred_folder, exist_ok=True)
+
+#     inserted_users = []
+
+#     for user in users:
+#         # 1. Save GCP JSON file if provided
+#         if user.get("cloudName") == "GCP" and user.get("gcpJsonFile"):
+#             try:
+#                 base64_content = user["gcpJsonFile"].split(",")[1]
+#                 json_bytes = base64.b64decode(base64_content)
+#                 filename = f"{user['cloudName']}_{user['environment']}_{user['rootId']}.json"
+#                 filepath = os.path.join(cred_folder, filename)
+#                 with open(filepath, "wb") as f:
+#                     f.write(json_bytes)
+#             except Exception as e:
+#                 raise HTTPException(status_code=400, detail=f"Error saving GCP file: {str(e)}")
+
+#         # 2. Check for duplicates
+#         existing = usersEnvironmentOnboarding_collection.find_one({
+#             "cloudName": user["cloudName"],
+#             "environment": user["environment"],
+#             "rootId": user["rootId"],
+#             "managementUnitId": user["managementUnitId"]
+#         })
+#         if existing:
+#             continue
+
+#         # 3. Hash the password and insert into DB
+#         user_dict = dict(user)
+#         user_dict["email"] = email
+#         user_dict["srvacctPass"] = bcrypt.hashpw(
+#             user_dict["srvacctPass"].encode("utf-8"), bcrypt.gensalt()
+#         ).decode("utf-8")
+
+#         result = usersEnvironmentOnboarding_collection.insert_one(user_dict)
+#         user_dict["_id"] = str(result.inserted_id)
+#         inserted_users.append(user_dict)
+
+#     if not inserted_users:
+#         raise HTTPException(status_code=400, detail="All entries are duplicates or failed")
+
+#     for user in inserted_users:
+#         user.pop("_id", None)
+
+#     return {
+#         "message": f"{len(inserted_users)} users added to Environment successfully",
+#         "data": inserted_users
+    
+#     }
+
 @router.post("/environment_onboarding")
 async def environment_onboarding(request: Request):
     data = await request.json()
@@ -134,12 +190,11 @@ async def environment_onboarding(request: Request):
         if existing:
             continue
 
-        # 3. Hash the password and insert into DB
+        # 3. Directly save the password without bcrypt
         user_dict = dict(user)
         user_dict["email"] = email
-        user_dict["srvacctPass"] = bcrypt.hashpw(
-            user_dict["srvacctPass"].encode("utf-8"), bcrypt.gensalt()
-        ).decode("utf-8")
+        # Password is stored as plain text here
+        user_dict["srvacctPass"] = user["srvacctPass"]
 
         result = usersEnvironmentOnboarding_collection.insert_one(user_dict)
         user_dict["_id"] = str(result.inserted_id)
@@ -154,7 +209,6 @@ async def environment_onboarding(request: Request):
     return {
         "message": f"{len(inserted_users)} users added to Environment successfully",
         "data": inserted_users
-    
     }
 
     
