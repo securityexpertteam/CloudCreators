@@ -188,7 +188,9 @@ def analyze_azure_resources():
                 "Timestamp": datetime.datetime.utcnow().isoformat() + "Z",
                 "ConfidenceScore": tags.get("ConfidenceScore", "na"),
                 "Status": tags.get("Status", "available").lower(),
-                "Entity": tags.get("Entity", "na").lower()
+                "Entity": tags.get("Entity", "na").lower(),
+                "RootId": tenant_id,            
+                "Email": env.get("email", "")      
             }
 
             # Check if this is a storage account and handle filtering
