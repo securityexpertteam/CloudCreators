@@ -46,6 +46,12 @@ except ImportError:
 PROJECT_ID = "pro-plasma-465515-k1"
 CREDENTIALS_PATH = r"C:\Users\dasar\OneDrive\Documents\cloud_optimisation\pro-plasma-465515-k1-833ec1affeb6.json"
 
+# MongoDB Configuration
+MONGODB_HOST = "localhost"  # Change this to your MongoDB server IP/hostname
+MONGODB_PORT = 27017        # Change this to your MongoDB port
+MONGODB_DATABASE = "myDB"   # Change this to your database name
+MONGODB_COLLECTION = "Cost_Insights"  # Change this to your collection name
+
 # Analysis configuration
 DISK_QUOTA_GB = 100  # Disk quota for utilization calculation
 
@@ -1094,10 +1100,10 @@ def insert_to_mongodb(records):
         return False
     
     try:
-        # Connect to MongoDB (default localhost:27017)
-        client = MongoClient()
-        db = client['myDB']
-        collection = db['Cost_Insights']
+        # Connect to MongoDB using configurable settings
+        client = MongoClient(host=MONGODB_HOST, port=MONGODB_PORT)
+        db = client[MONGODB_DATABASE]
+        collection = db[MONGODB_COLLECTION]
         
         # Clear existing records from the collection before inserting new data
         existing_count = collection.count_documents({})
@@ -1114,7 +1120,8 @@ def insert_to_mongodb(records):
         # Insert all records
         result = collection.insert_many(records)
         print(f"✅ Successfully inserted {len(result.inserted_ids)} records into MongoDB")
-        print(f"📍 Database: gcp, Collection: optimization")
+        print(f"📍 Database: {MONGODB_DATABASE}, Collection: {MONGODB_COLLECTION}")
+        print(f"📍 MongoDB Server: {MONGODB_HOST}:{MONGODB_PORT}")
         
         return True
         
