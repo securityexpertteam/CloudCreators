@@ -1,9 +1,12 @@
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query,Request
 from models import User,BulkSignupRequest, Resource, StandardConfig, SignupUser
 from database import users_collection,usersEnvironmentOnboarding_collection, get_db, users_signup_collection
 from fastapi.encoders import jsonable_encoder
 from typing import List, Optional
 import bcrypt
+
+import os
+import base64
 
 router = APIRouter()
 
@@ -62,33 +65,88 @@ def get_latest_config(
     return config
 
 # ====User Onboarding routes============
+# @router.post("/environment_onboarding")
+# def bulk_signup(request: BulkSignupRequest):
+#     email = request.email
+#     users = request.users 
+#     inserted_users = []
+
+#     for user in users:
+#         # Check for duplicates based on cloudName, environment, rootId, managementUnitId
+#         existing = usersEnvironmentOnboarding_collection.find_one({
+#             "cloudName": user.cloudName,
+#             "environment": user.environment,
+#             "rootId": user.rootId,
+#             "managementUnitId": user.managementUnitId
+#         })
+#         if existing:
+#             continue
+
+#         user_dict = user.dict()
+#         user_dict["email"] = email
+#         # Hash the service account password before storing
+#         user_dict["srvacctPass"] = bcrypt.hashpw(user_dict["srvacctPass"].encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+#         result = usersEnvironmentOnboarding_collection.insert_one(user_dict)
+#         user_dict["_id"] = str(result.inserted_id)
+#         inserted_users.append(user_dict)
+
+#     if not inserted_users:
+#         raise HTTPException(status_code=400, detail="Entries are duplicates")
+
+#     for user in inserted_users:
+#         user.pop("_id", None)
+
+#     return {
+#         "message": f"{len(inserted_users)} users added to Environment successfully",
+#         "data": inserted_users
+#     }
+
 @router.post("/environment_onboarding")
-def bulk_signup(request: BulkSignupRequest):
-    email = request.email
-    users = request.users 
+async def environment_onboarding(request: Request):
+    data = await request.json()
+    email = data.get("email")
+    users = data.get("users", [])
+    cred_folder = os.path.join(os.getcwd(), "Creds")
+    os.makedirs(cred_folder, exist_ok=True)
+
     inserted_users = []
 
     for user in users:
-        # Check for duplicates based on cloudName, environment, rootId, managementUnitId
+        # 1. Save GCP JSON file if provided
+        if user.get("cloudName") == "GCP" and user.get("gcpJsonFile"):
+            try:
+                base64_content = user["gcpJsonFile"].split(",")[1]
+                json_bytes = base64.b64decode(base64_content)
+                filename = f"{user['cloudName']}_{user['environment']}_{user['rootId']}.json"
+                filepath = os.path.join(cred_folder, filename)
+                with open(filepath, "wb") as f:
+                    f.write(json_bytes)
+            except Exception as e:
+                raise HTTPException(status_code=400, detail=f"Error saving GCP file: {str(e)}")
+
+        # 2. Check for duplicates
         existing = usersEnvironmentOnboarding_collection.find_one({
-            "cloudName": user.cloudName,
-            "environment": user.environment,
-            "rootId": user.rootId,
-            "managementUnitId": user.managementUnitId
+            "cloudName": user["cloudName"],
+            "environment": user["environment"],
+            "rootId": user["rootId"],
+            "managementUnitId": user["managementUnitId"]
         })
         if existing:
             continue
 
-        user_dict = user.dict()
+        # 3. Hash the password and insert into DB
+        user_dict = dict(user)
         user_dict["email"] = email
-        # Hash the service account password before storing
-        user_dict["srvacctPass"] = bcrypt.hashpw(user_dict["srvacctPass"].encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+        user_dict["srvacctPass"] = bcrypt.hashpw(
+            user_dict["srvacctPass"].encode("utf-8"), bcrypt.gensalt()
+        ).decode("utf-8")
+
         result = usersEnvironmentOnboarding_collection.insert_one(user_dict)
         user_dict["_id"] = str(result.inserted_id)
         inserted_users.append(user_dict)
 
     if not inserted_users:
-        raise HTTPException(status_code=400, detail="Entries are duplicates")
+        raise HTTPException(status_code=400, detail="All entries are duplicates or failed")
 
     for user in inserted_users:
         user.pop("_id", None)
@@ -96,7 +154,9 @@ def bulk_signup(request: BulkSignupRequest):
     return {
         "message": f"{len(inserted_users)} users added to Environment successfully",
         "data": inserted_users
-    }    
+    
+    }
+
     
 @router.get("/environments/{email}")
 def get_environments(email: str):
