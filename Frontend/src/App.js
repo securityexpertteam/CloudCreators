@@ -3,6 +3,7 @@ import { Routes, Route, BrowserRouter, useLocation } from "react-router-dom";
 import SignIn from './SignIn/SignIn';
 import StandardConfigForm from './StandardConfig/StandardConfigForm';
 import UserOnboarding from "./UserOnboarding/userOnboarding";
+//import Schedulescan from "./Schedulescan/Schedulescan";
 import Header from "./Header/Header";
 import Footer from "./Footer/Footer";
 import Dashboard from "./Dashboard/Dashboard";
@@ -26,6 +27,8 @@ function AppContent() {
           <Route path="/signin" element={<SignIn />} />
           <Route path="/config" element={<StandardConfigForm />} />
           <Route path="/UserOnboarding" element={<UserOnboarding />} />
+
+          {/* Add other routes as needed */}
           <Route path="/dashboard" element={<Dashboard />} />
         </Routes>
       </main>
