@@ -3,13 +3,13 @@ import "./userOnboarding.css";
 
 const UserOnboarding = () => {
   const [envEntries, setEnvEntries] = useState([]);
-  const loginId = JSON.parse(localStorage.getItem("user")).email;
+  const email = JSON.parse(localStorage.getItem("user")).email;
 
   useEffect(() => {
-    fetch(`http://localhost:8000/environments/${loginId}`)
+    fetch(`http://localhost:8000/environments/${email}`)
       .then(res => res.json())
       .then(data => setEnvEntries(data.data || []));
-  }, [loginId]);
+  }, [email]);
 
   const [user, setUser] = useState({
     cloudName: "",
@@ -18,12 +18,33 @@ const UserOnboarding = () => {
     managementUnitId: "",
     srvaccntName: "",
     srvacctPass: "",
+    gcpJsonFile: null
   });
 
   const [usersList, setUsersList] = useState([]);
 
+  const handleFileChange = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        setUser({ ...user, gcpJsonFile: event.target.result });
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
   const handleAddUser = () => {
-    if (Object.values(user).some(val => !val.trim())) {
+    // Validation
+    if (
+      !user.cloudName ||
+      !user.environment ||
+      !user.rootId ||
+      !user.managementUnitId ||
+      (user.cloudName === "GCP"
+        ? !user.gcpJsonFile
+        : !user.srvaccntName || !user.srvacctPass)
+    ) {
       alert("Please fill all fields");
       return;
     }
@@ -35,6 +56,7 @@ const UserOnboarding = () => {
       managementUnitId: "",
       srvaccntName: "",
       srvacctPass: "",
+      gcpJsonFile: null
     });
   };
 
@@ -50,11 +72,11 @@ const UserOnboarding = () => {
   const handleSubmit = async () => {
     const payload = {
       users: usersList,
-      login_id: loginId,
+      email: email,
     };
 
     try {
-      const response = await fetch("http://localhost:8000/bulk_signup", {
+      const response = await fetch("http://localhost:8000/environment_onboarding", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
@@ -69,7 +91,7 @@ const UserOnboarding = () => {
 
       alert(data.message);
       setUsersList([]);
-      fetch(`http://localhost:8000/environments/${loginId}`)
+      fetch(`http://localhost:8000/environments/${email}`)
         .then(res => res.json())
         .then(data => setEnvEntries(data.data || []));
     } catch (error) {
@@ -86,7 +108,15 @@ const UserOnboarding = () => {
           <label>Cloud Provider</label>
           <select
             value={user.cloudName}
-            onChange={(e) => setUser({ ...user, cloudName: e.target.value })}
+            onChange={(e) =>
+              setUser({
+                ...user,
+                cloudName: e.target.value,
+                srvaccntName: "",
+                srvacctPass: "",
+                gcpJsonFile: null
+              })
+            }
           >
             <option value="">Select</option>
             <option value="AWS">AWS</option>
@@ -129,28 +159,42 @@ const UserOnboarding = () => {
             }
           />
         </div>
-        <div className="input-group">
-          <label>Service Account Name</label>
-          <input
-            type="text"
-            value={user.srvaccntName}
-            placeholder="Enter Service Account Name"
-            onChange={(e) =>
-              setUser({ ...user, srvaccntName: e.target.value })
-            }
-          />
-        </div>
-        <div className="input-group">
-          <label>Service Account Password</label>
-          <input
-            type="password"
-            value={user.srvacctPass}
-            placeholder="Enter Service Account Password"
-            onChange={(e) =>
-              setUser({ ...user, srvacctPass: e.target.value })
-            }
-          />
-        </div>
+        {user.cloudName === "GCP" ? (
+          <div className="input-group">
+            <label>Upload GCP Service Account JSON</label>
+            <input
+              type="file"
+              accept=".json"
+              onChange={handleFileChange}
+            />
+            {user.gcpJsonFile && <span>File uploaded</span>}
+          </div>
+        ) : (
+          <>
+            <div className="input-group">
+              <label>Service Account Name</label>
+              <input
+                type="text"
+                value={user.srvaccntName}
+                placeholder="Enter Service Account Name"
+                onChange={(e) =>
+                  setUser({ ...user, srvaccntName: e.target.value })
+                }
+              />
+            </div>
+            <div className="input-group">
+              <label>Service Account Password</label>
+              <input
+                type="password"
+                value={user.srvacctPass}
+                placeholder="Enter Service Account Password"
+                onChange={(e) =>
+                  setUser({ ...user, srvacctPass: e.target.value })
+                }
+              />
+            </div>
+          </>
+        )}
         <button className="add-btn" onClick={handleAddUser}>
           Add
         </button>
@@ -167,6 +211,7 @@ const UserOnboarding = () => {
                 <th>ManagementUnit_ID</th>
                 <th>ServiceAccountName</th>
                 <th>ServiceAccountPass</th>
+                <th>GCP JSON</th>
                 <th>Actions</th>
               </tr>
             </thead>
@@ -178,7 +223,8 @@ const UserOnboarding = () => {
                   <td>{u.rootId}</td>
                   <td>{u.managementUnitId}</td>
                   <td>{u.srvaccntName}</td>
-                  <td>{"*".repeat(u.srvacctPass.length)}</td>
+                  <td>{u.cloudName === "GCP" ? "-" : "*".repeat(u.srvacctPass.length)}</td>
+                  <td>{u.cloudName === "GCP" && u.gcpJsonFile ? "Uploaded" : "-"}</td>
                   <td>
                     <button
                       className="edit-btn"
@@ -213,21 +259,21 @@ const UserOnboarding = () => {
               <th>RootId</th>
               <th>ManagementUnit_ID</th>
               <th>ServiceAccountName</th>
-
+              <th>GCP JSON</th>
             </tr>
           </thead>
           <tbody>
-            {envEntries.map((entry, idx) => (
-              <tr key={entry._id || idx}>
-                <td>{entry.cloudName}</td>
-                <td>{entry.environment}</td>
-                <td>{entry.rootId}</td>
-                <td>{entry.managementUnitId}</td>
-                <td>{entry.srvaccntName}</td>
-          
-              </tr>
-            ))}
-          </tbody>
+  {envEntries.map((entry, idx) => (
+    <tr key={entry._id || idx}>
+      <td>{entry.cloudName}</td>
+      <td>{entry.environment}</td>
+      <td>{entry.rootId}</td>
+      <td>{entry.managementUnitId}</td>
+      <td>{entry.cloudName === "GCP" ? "N/A" : entry.srvaccntName}</td>
+      <td>{entry.gcpJsonFile ? "Credentials Uploaded" : "N/A"}</td>
+    </tr>
+  ))}
+</tbody>
         </table>
       </div>
     </div>

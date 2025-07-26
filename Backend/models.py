@@ -9,11 +9,12 @@ class User(BaseModel):
     managementUnitId: str
     srvaccntName: str
     srvacctPass: str
-    LoginId: str = None
+    email: str = None
+    gcpJsonFile: Optional[str] = None  # <-- Add this field
 
 class BulkSignupRequest(BaseModel):
     users: List[User]
-    login_id: str  
+    email: str  
 
 class Resource(BaseModel):
     resource_id: str
