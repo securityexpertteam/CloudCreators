@@ -29,6 +29,7 @@ from googleapiclient import discovery
 import ipaddress
 import json
 import os
+import os
 
 # MongoDB integration
 try:
@@ -82,11 +83,48 @@ def get_project_id_from_mongodb():
         print(f"❌ Error fetching PROJECT_ID from MongoDB: {e}")
         return None
 
+def get_email_from_environment_onboarding():
+    """
+    Fetch the email from the latest entry in environmentOnboarding collection.
+    
+    Returns:
+        str: Email address from the latest record, or "NA" if not found
+    """
+    if not MONGODB_AVAILABLE:
+        print("❌ pymongo not available. Cannot fetch email from environmentOnboarding.")
+        return "NA"
+    
+    try:
+        # Connect to MongoDB
+        client = MongoClient(host=MONGODB_HOST, port=MONGODB_PORT)
+        db = client[MONGODB_DATABASE]
+        environment_collection = db['environmentOnboarding']
+        
+        # Get the latest environment record
+        env_record = environment_collection.find_one(sort=[('_id', -1)])  # Get latest record
+        
+        if env_record and 'email' in env_record:
+            email = env_record['email']
+            print(f"✅ Retrieved email from environmentOnboarding: {email}")
+            client.close()
+            return email
+        else:
+            print("❌ No email found in environmentOnboarding collection")
+            client.close()
+            return "NA"
+            
+    except Exception as e:
+        print(f"❌ Error fetching email from environmentOnboarding: {e}")
+        return "NA"
+
 # Get PROJECT_ID from MongoDB or fallback to hardcoded value
 PROJECT_ID = get_project_id_from_mongodb()
 if not PROJECT_ID:
     PROJECT_ID = "pro-plasma-465515-k1"  # Fallback to hardcoded value
     print(f"⚠️  Using fallback PROJECT_ID: {PROJECT_ID}")
+
+# Get email from environmentOnboarding collection
+USER_EMAIL = get_email_from_environment_onboarding()
 
 CREDENTIALS_PATH = r"C:\Users\dasar\OneDrive\Documents\cloud_optimisation\pro-plasma-465515-k1-833ec1affeb6.json"
 
@@ -1295,7 +1333,9 @@ def extract_resource_metadata(labels, resource_name, resource_type, region=None,
         "Timestamp": datetime.now(UTC).isoformat().replace('+00:00', 'Z'),
         "ConfidenceScore": "NA",
         "Status": resource_status,
-        "Entity": get_label_value("entity")
+        "Entity": get_label_value("entity"),
+        "RootId": "NA",
+        "Email": USER_EMAIL
     }
 
 # ================================================================================
@@ -1306,6 +1346,7 @@ if __name__ == "__main__":
     print("🚀 GCP Resource Optimization Analysis")
     print("=" * 80)
     print(f"Project: {PROJECT_ID}")
+    print(f"User Email: {USER_EMAIL}")
     print(f"Analysis Date: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print(f"Disk Analysis: Enabled")
     print("=" * 80)
