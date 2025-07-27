@@ -16,7 +16,7 @@ function Dashboard() {
     Region: "",
     TotalCost: "",
   });
-  const [showFilter, setShowFilter] = useState(false);
+  const [showFilter] = useState(false);
 
   useEffect(() => {
     axios.get("http://localhost:8000/api/resources")

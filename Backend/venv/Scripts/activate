@@ -41,12 +41,12 @@ case "$(uname)" in
     CYGWIN*|MSYS*|MINGW*)
         # transform D:\path\to\venv to /d/path/to/venv on MSYS and MINGW
         # and to /cygdrive/d/path/to/venv on Cygwin
-        VIRTUAL_ENV=$(cygpath 'E:\PRUDHVI\CloudCreators(25)\CloudCreators\Backend\venv')
+        VIRTUAL_ENV=$(cygpath 'C:\Users\saran\Downloads\Cloud cost Integrated code v27\CloudCreators\Backend\venv')
         export VIRTUAL_ENV
         ;;
     *)
         # use the path as-is
-        export VIRTUAL_ENV='E:\PRUDHVI\CloudCreators(25)\CloudCreators\Backend\venv'
+        export VIRTUAL_ENV='C:\Users\saran\Downloads\Cloud cost Integrated code v27\CloudCreators\Backend\venv'
         ;;
 esac
 

@@ -8,7 +8,7 @@ if defined _OLD_CODEPAGE (
     "%SystemRoot%\System32\chcp.com" 65001 > nul
 )
 
-set "VIRTUAL_ENV=E:\PRUDHVI\CloudCreators(25)\CloudCreators\Backend\venv"
+set "VIRTUAL_ENV=C:\Users\saran\Downloads\Cloud cost Integrated code v27\CloudCreators\Backend\venv"
 
 if not defined PROMPT set PROMPT=$P$G
 

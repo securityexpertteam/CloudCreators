@@ -4,6 +4,7 @@ from database import users_collection,usersEnvironmentOnboarding_collection, get
 from fastapi.encoders import jsonable_encoder
 from typing import List, Optional
 import bcrypt
+from datetime import datetime, timezone
 
 import os
 import base64
@@ -22,16 +23,6 @@ def get_resources():
     for r in resources:
         r["_id"] = str(r["_id"])
     return resources
-
-@router.post("/triggers")
-async def create_trigger(trigger: Trigger):
-    # trigger.scheduled_time is a datetime object (date and time)
-    data = trigger.dict()
-    # Optionally, convert datetime to ISO string for MongoDB
-    data["scheduled_time"] = data["scheduled_time"].isoformat()
-    result = triggers_collection.insert_one(data)
-    data["_id"] = str(result.inserted_id)
-    return {"message": "Schedule saved", "data": data}
 
 @router.post("/signin")
 def signin(user: SignupUser):
@@ -240,3 +231,20 @@ def get_environments(email: str):
     for entry in entries:
         entry["_id"] = str(entry["_id"])
     return {"data": entries}    
+
+@router.post("/triggers")
+async def create_trigger(trigger: Trigger):
+    # Check if a trigger already exists for this email
+    existing = triggers_collection.find_one({"email": trigger.email})
+    if existing:
+        raise HTTPException(status_code=400, detail="Already scheduled for this user.")
+
+    data = {
+        "email": trigger.email,
+        "SystemTimeStamp": datetime.now(timezone.utc),  # Store as datetime, not string
+        "ScheduledTimeStamp": trigger.ScheduledTimeStamp,  # Already a datetime
+        "Status": "Pending"
+    }
+    result = triggers_collection.insert_one(data)
+    data["_id"] = str(result.inserted_id)
+    return {"message": "Schedule saved", "data": data}
