@@ -18,12 +18,6 @@ db = client[DB_NAME]
 triggers_collection = db["triggers"]
 cost_insights_collection = db["Cost_Insights"]
 environment_onboarding_collection = db["environmentOnboarding"]
-standard_config_collection = db["standardConfigsDb"]
-
-# Get storage_size value from standardConfigsDb collection
-storage_config = standard_config_collection.find_one({}, {"storage_size": 1, "_id": 0})
-sc_stor_size_in_gb = storage_config.get("storage_size") if storage_config else 1  # Default to 1 if not found
-
 try:
     client.admin.command('ismaster')
     print(f"MongoDB connection to {MONGO_URI} established successfully.")
@@ -76,8 +70,7 @@ def analyze_azure_resources():
         
         # Extract Azure credentials from user record
         client_id = env.get("srvaccntName")           # client_id
-        client_secret = env.get("srvacctPass") 
-       
+        client_secret = env.get("srvacctPass")        # client_secret
         tenant_id = env.get("rootId")                 # tenant_id
         subscription_id = env.get("managementUnitId") # subscription_id
         
@@ -167,8 +160,8 @@ def analyze_azure_resources():
 
             # Set specific values for storage accounts vs other resources
             if resource.type and "Microsoft.Storage/storageAccounts" in resource.type:
-                finding_value = "Bucket Underused"
-                recommendation_value = "ScaleDown"
+                finding_value = "Bucket underutilised"
+                recommendation_value = "Try Merging"
                 resource_type_value = "Storage"
             else:
                 finding_value = tags.get("Finding", "auto-generated from cost explorer").lower()
@@ -181,10 +174,6 @@ def analyze_azure_resources():
                 "ManagementUnits": subscription_id,
                 "ApplicationCode": tags.get("ApplicationCode", "na").lower(),
                 "CostCenter": tags.get("CostCenter", "na").lower(),
-                "CIO":tags.get("CIO", "na").lower(),
-                "Platform":tags.get("Platform", "na").lower(),
-                "Lab":tags.get("Lab", "na").lower(),
-                "Feature":tags.get("Feature", "na").lower(),
                 "Owner": tags.get("Owner", "na").lower(),
                 "TicketId": tags.get("Ticket", "na").lower(),
                 "ResourceType": resource_type_value,
@@ -213,8 +202,7 @@ def analyze_azure_resources():
                     storage_size_gb = get_storage_account_size(storage_client, resource_group_name, resource.name)
                     
                     # Only collect storage accounts with less than 1GB utilization (don't add StorageSizeGB to output)
-                    if storage_size_gb is not None and storage_size_gb < sc_stor_size_in_gb:
-                        formatted_resource["Current_Size"] = storage_size_gb
+                    if storage_size_gb is not None and storage_size_gb < 1:
                         print(f"[UNDERUTILIZED] Storage Account: {resource.name} - Size: {storage_size_gb}GB")
                     underutilized_storage_accounts.append(formatted_resource)
                 # Don't insert any storage accounts into database during resource loop

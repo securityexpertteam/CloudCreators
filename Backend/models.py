@@ -14,7 +14,8 @@ class User(BaseModel):
     gcpJsonFile: Optional[str] = None  # <-- Add this field
 
 class Trigger(BaseModel):
-    scheduled_time: datetime
+    email: str
+    ScheduledTimeStamp: datetime
 
 class BulkSignupRequest(BaseModel):
     users: List[User]
