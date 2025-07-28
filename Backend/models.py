@@ -16,6 +16,8 @@ class User(BaseModel):
 class Trigger(BaseModel):
     email: str
     ScheduledTimeStamp: datetime
+    ScanCompletedTime: Optional[datetime] = None
+
 
 class BulkSignupRequest(BaseModel):
     users: List[User]
