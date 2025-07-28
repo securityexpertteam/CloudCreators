@@ -273,7 +273,7 @@ def analyze_azure_resources():
 
         formatted_resource = {
             "_id": str(resource.id),
-            "CloudProvider": tags.get("CloudProvider", "azure").lower(),
+            "CloudProvider": tags.get("CloudProvider", "Azure"),
             "ManagementUnitId": subscription_id,
             "ApplicationCode": tags.get("ApplicationCode", "na").lower(),
             "CostCenter": tags.get("CostCenter", "na").lower(),
@@ -468,7 +468,7 @@ def analyze_azure_resources():
 
           # Clear existing records from the collection before inserting new data
         filter_query = {
-            "CloudProvider": "azure",
+            "CloudProvider": "Azure",
             "ManagementUnitId": subscription_id,
             "Email": env.get("email", "") 
         }
