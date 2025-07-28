@@ -7,8 +7,11 @@ from azure.mgmt.resource import ResourceManagementClient
 from azure.mgmt.costmanagement import CostManagementClient
 from azure.mgmt.storage import StorageManagementClient
 from azure.mgmt.monitor import MonitorManagementClient
+from azure.mgmt.compute import ComputeManagementClient
+from azure.mgmt.network import NetworkManagementClient
 from pymongo import MongoClient
 import os
+import ipaddress
 
 # --- MongoDB connection details ---
 MONGO_URI = os.getenv("MONGO_URI", "mongodb://localhost:27017/")
@@ -18,6 +21,17 @@ db = client[DB_NAME]
 triggers_collection = db["triggers"]
 cost_insights_collection = db["Cost_Insights"]
 environment_onboarding_collection = db["environmentOnboarding"]
+standard_config_collection = db["standardConfigsDb"]
+
+# Get storage_size value from standardConfigsDb collection
+storage_config = standard_config_collection.find_one({}, {"storage_size": 1, "_id": 0})
+sc_stor_size_in_gb = storage_config.get("storage_size") if storage_config else 1  # Default to 1 if not found
+VM_UNDERUTILIZED_CPU_THRESHOLD = 15
+VM_UNDERUTILIZED_MEMORY_THRESHOLD = 30
+VM_UNDERUTILIZED_NETWORK_THRESHOLD = 40
+VM_UNDERUTILIZED_TOTAL_AVG_THRESHOLD = 30
+SUBNET_FREE_IP_THRESHOLD = 90  # percent
+
 try:
     client.admin.command('ismaster')
     print(f"MongoDB connection to {MONGO_URI} established successfully.")
@@ -56,6 +70,90 @@ def get_storage_account_size(storage_client, resource_group_name, storage_accoun
         print(f"Error getting storage account size for {storage_account_name}: {e}")
         return None
 
+def get_vm_average_cpu(monitor_client, resource_id, start_time, end_time):
+    """Fetch average CPU utilization for a VM over a period."""
+    try:
+        metrics_data = monitor_client.metrics.list(
+            resource_id,
+            timespan=f"{start_time}/{end_time}",
+            interval='PT1H',
+            metricnames='Percentage CPU',
+            aggregation='Average'
+        )
+        values = []
+        for item in metrics_data.value:
+            for timeserie in item.timeseries:
+                for data in timeserie.data:
+                    if data.average is not None:
+                        values.append(data.average)
+        if values:
+            return sum(values) / len(values)
+        return None
+    except Exception as e:
+        print(f"Error fetching CPU metrics for {resource_id}: {e}")
+        return None
+
+def get_vm_average_memory(monitor_client, resource_id, start_time, end_time):
+    """Fetch average memory utilization for a VM over a period."""
+    try:
+        metrics_data = monitor_client.metrics.list(
+            resource_id,
+            timespan=f"{start_time}/{end_time}",
+            interval='PT1H',
+            metricnames='Available Memory Bytes',
+            aggregation='Average'
+        )
+        values = []
+        for item in metrics_data.value:
+            for timeserie in item.timeseries:
+                for data in timeserie.data:
+                    if data.average is not None:
+                        values.append(data.average)
+        if values:
+            # Convert bytes to percent if total memory is known, else just return average bytes
+            return sum(values) / len(values)
+        return None
+    except Exception as e:
+        print(f"Error fetching Memory metrics for {resource_id}: {e}")
+        return None
+
+def get_vm_average_network(monitor_client, resource_id, start_time, end_time):
+    """Fetch average network utilization for a VM over a period."""
+    try:
+        metrics_data = monitor_client.metrics.list(
+            resource_id,
+            timespan=f"{start_time}/{end_time}",
+            interval='PT1H',
+            metricnames='Network In Total',
+            aggregation='Average'
+        )
+        values = []
+        for item in metrics_data.value:
+            for timeserie in item.timeseries:
+                for data in timeserie.data:
+                    if data.average is not None:
+                        values.append(data.average)
+        if values:
+            return sum(values) / len(values)
+        return None
+    except Exception as e:
+        print(f"Error fetching Network metrics for {resource_id}: {e}")
+        return None
+
+def get_subnet_free_ip_percent(network_client, resource_group, vnet_name, subnet_name):
+    """Returns the percent of free IPs in the subnet."""
+    try:
+        subnet = network_client.subnets.get(resource_group, vnet_name, subnet_name)
+        prefix = subnet.address_prefix
+        total_ips = ipaddress.ip_network(prefix).num_addresses - 5  # Azure reserves 5 IPs per subnet
+        used_ips = subnet.ip_configurations and len(subnet.ip_configurations) or 0
+        free_ips = total_ips - used_ips
+        free_percent = (free_ips / total_ips) * 100 if total_ips > 0 else 0
+        return free_percent
+    except Exception as e:
+        print(f"Error fetching subnet info for {subnet_name}: {e}")
+        return None
+
 def analyze_azure_resources():
     """Analyze Azure resources and identify underutilized storage accounts."""
     print("[INFO] Starting Azure resource optimization analysis...")
@@ -70,7 +168,8 @@ def analyze_azure_resources():
         
         # Extract Azure credentials from user record
         client_id = env.get("srvaccntName")           # client_id
-        client_secret = env.get("srvacctPass")        # client_secret
+        client_secret = env.get("srvacctPass") 
+       
         tenant_id = env.get("rootId")                 # tenant_id
         subscription_id = env.get("managementUnitId") # subscription_id
         
@@ -89,16 +188,19 @@ def analyze_azure_resources():
     resource_client = ResourceManagementClient(credential, subscription_id)
     cost_client = CostManagementClient(credential)
     storage_client = StorageManagementClient(credential, subscription_id)
+    monitor_client = MonitorManagementClient(credential, subscription_id)
+    compute_client = ComputeManagementClient(credential, subscription_id)
+    network_client = NetworkManagementClient(credential, subscription_id)
 
-    end_date = datetime.datetime.utcnow().date()
-    start_date = end_date - datetime.timedelta(days=30)
+    end_date = datetime.datetime.utcnow()
+    start_date = end_date - datetime.timedelta(days=7)
 
     cost_query = {
         "type": "Usage",
         "timeframe": "Custom",
         "time_period": {
-            "from": start_date.isoformat() + "T00:00:00Z",
-            "to": end_date.isoformat() + "T00:00:00Z"
+            "from": start_date.strftime("%Y-%m-%dT00:00:00Z"),
+            "to": end_date.strftime("%Y-%m-%dT00:00:00Z")
         },
         "dataset": {
             "granularity": "None",
@@ -140,75 +242,149 @@ def analyze_azure_resources():
 
     # Iterate and format output
     for resource in resource_client.resources.list():
-            tags = resource.tags or {}
-            type_parts = resource.type.split("/") if resource.type else ["Unknown", "Unknown"]
-            resource_type = type_parts[0].replace("Microsoft.", "").capitalize() if len(type_parts) > 0 else "Unknown"
-            
-            # Set SubResourceType to "bucket" for storage accounts, otherwise use original logic
-            if resource.type and "Microsoft.Storage/storageAccounts" in resource.type:
-                sub_resource_type = "bucket"
-            else:
-                sub_resource_type = type_parts[1][0].upper() + type_parts[1][1:] if len(type_parts) > 1 else "Unknown"
+        tags = resource.tags or {}
+        type_parts = resource.type.split("/") if resource.type else ["Unknown", "Unknown"]
+        resource_type = type_parts[0].replace("Microsoft.", "").capitalize() if len(type_parts) > 0 else "Unknown"
+        
+        # Set SubResourceType to "bucket" for storage accounts, otherwise use original logic
+        if resource.type and "Microsoft.Storage/storageAccounts" in resource.type:
+            sub_resource_type = "bucket"
+        else:
+            sub_resource_type = type_parts[1][0].upper() + type_parts[1][1:] if len(type_parts) > 1 else "Unknown"
 
-            normalized_id = normalize_resource_id(resource.id)
-            total_cost = resource_cost_map.get(normalized_id, "Unknown")
+        normalized_id = normalize_resource_id(resource.id)
+        total_cost = resource_cost_map.get(normalized_id, "Unknown")
 
-            if total_cost == "Unknown":
-                unmatched_count += 1
-            else:
-                matched_count += 1
+        if total_cost == "Unknown":
+            unmatched_count += 1
+        else:
+            matched_count += 1
 
-            # Set specific values for storage accounts vs other resources
-            if resource.type and "Microsoft.Storage/storageAccounts" in resource.type:
-                finding_value = "Bucket underutilised"
-                recommendation_value = "Try Merging"
-                resource_type_value = "Storage"
-            else:
-                finding_value = tags.get("Finding", "auto-generated from cost explorer").lower()
-                recommendation_value = tags.get("Recommendation", "review usage").lower()
-                resource_type_value = resource_type.lower()
+        # Set specific values for storage accounts vs other resources
+        if resource.type and "Microsoft.Storage/storageAccounts" in resource.type:
+            finding_value = "Bucket underutilised"
+            recommendation_value = "Try Merging"
+            resource_type_value = "Storage"
+        else:
+            finding_value = tags.get("Finding", "auto-generated from cost explorer").lower()
+            recommendation_value = tags.get("Recommendation", "review usage").lower()
+            resource_type_value = resource_type.lower()
 
-            formatted_resource = {
-                "_id": str(resource.id),
-                "CloudProvider": tags.get("CloudProvider", "azure").lower(),
-                "ManagementUnits": subscription_id,
-                "ApplicationCode": tags.get("ApplicationCode", "na").lower(),
-                "CostCenter": tags.get("CostCenter", "na").lower(),
-                "Owner": tags.get("Owner", "na").lower(),
-                "TicketId": tags.get("Ticket", "na").lower(),
-                "ResourceType": resource_type_value,
-                "SubResourceType": sub_resource_type.lower(),
-                "ResourceName": resource.name,
-                "Region": resource.location if resource.location else "na",
-                "TotalCost": total_cost,
-                "Currency": tags.get("Currency", "usd").upper(),
-                "Finding": finding_value,
-                "Recommendation": recommendation_value,
-                "Environment": tags.get("Environment", "na").lower(),
-                "Timestamp": datetime.datetime.utcnow().isoformat() + "Z",
-                "ConfidenceScore": tags.get("ConfidenceScore", "na"),
-                "Status": tags.get("Status", "available").lower(),
-                "Entity": tags.get("Entity", "na").lower(),
-                "RootId": tenant_id,            
-                "Email": env.get("email", "")      
-            }
+        formatted_resource = {
+            "_id": str(resource.id),
+            "CloudProvider": tags.get("CloudProvider", "azure").lower(),
+            "ManagementUnitId": subscription_id,
+            "ApplicationCode": tags.get("ApplicationCode", "na").lower(),
+            "CostCenter": tags.get("CostCenter", "na").lower(),
+            "CIO":tags.get("CIO", "na").lower(),
+            "Platform":tags.get("Platform", "na").lower(),
+            "Lab":tags.get("Lab", "na").lower(),
+            "Feature":tags.get("Feature", "na").lower(),
+            "Owner": tags.get("Owner", "na").lower(),
+            "TicketId": tags.get("Ticket", "na").lower(),
+            "ResourceType": resource_type_value,
+            "SubResourceType": sub_resource_type.lower(),
+            "ResourceName": resource.name,
+            "Region": resource.location if resource.location else "na",
+            "TotalCost": total_cost,
+            "Currency": tags.get("Currency", "usd").upper(),
+            "Finding": finding_value,
+            "Recommendation": recommendation_value,
+            "Environment": tags.get("Environment", "na").lower(),
+            "Timestamp": datetime.datetime.utcnow().isoformat() + "Z",
+            "ConfidenceScore": tags.get("ConfidenceScore", "na"),
+            "Status": tags.get("Status", "available").lower(),
+            "Entity": tags.get("Entity", "na").lower(),
+            "RootId": tenant_id,            
+            "Email": env.get("email", "")      
+        }
 
-            # Check if this is a storage account and handle filtering
-            if resource.type and "Microsoft.Storage/storageAccounts" in resource.type:
-                # Get resource group name from resource ID
-                resource_group_name = resource.id.split('/')[4] if len(resource.id.split('/')) > 4 else None
-                
-                if resource_group_name:
-                    storage_size_gb = get_storage_account_size(storage_client, resource_group_name, resource.name)
-                    
-                    # Only collect storage accounts with less than 1GB utilization (don't add StorageSizeGB to output)
-                    if storage_size_gb is not None and storage_size_gb < 1:
-                        print(f"[UNDERUTILIZED] Storage Account: {resource.name} - Size: {storage_size_gb}GB")
+        # Check if this is a storage account and handle filtering
+        if resource.type and "Microsoft.Storage/storageAccounts" in resource.type:
+            resource_group_name = resource.id.split('/')[4] if len(resource.id.split('/')) > 4 else None
+            if resource_group_name:
+                storage_size_gb = get_storage_account_size(storage_client, resource_group_name, resource.name)
+                if storage_size_gb is not None and storage_size_gb < sc_stor_size_in_gb:
+                    formatted_resource["Current_Size"] = storage_size_gb
+                    print(f"[UNDERUTILIZED] Storage Account: {resource.name} - Size: {storage_size_gb}GB")
                     underutilized_storage_accounts.append(formatted_resource)
-                # Don't insert any storage accounts into database during resource loop
-                continue
-            
+            continue
+
+        # --- Virtual Machine logic ---
+        if resource.type and "Microsoft.Compute/virtualMachines" in resource.type:
+            avg_cpu = get_vm_average_cpu(
+                monitor_client,
+                resource.id,
+                start_date.isoformat() + "Z",
+                end_date.isoformat() + "Z"
+            )
+            avg_memory = get_vm_average_memory(
+                monitor_client,
+                resource.id,
+                start_date.isoformat() + "Z",
+                end_date.isoformat() + "Z"
+            )
+            avg_network = get_vm_average_network(
+                monitor_client,
+                resource.id,
+                start_date.isoformat() + "Z",
+                end_date.isoformat() + "Z"
+            )
+
+            metrics = [m for m in [avg_cpu, avg_memory, avg_network] if m is not None]
+            if metrics:
+                total_avg = sum(metrics) / len(metrics)
+                formatted_resource["Current_Avg_VM"] = total_avg
+
+                if total_avg > VM_UNDERUTILIZED_TOTAL_AVG_THRESHOLD:
+                    formatted_resource["Finding"] = "VM underutilised"
+                    formatted_resource["Recommendation"] = "Scale Down"
+                    underutilized_storage_accounts.append(formatted_resource)
+                    print(f"[UNDERUTILIZED] VM: {resource.name} - Total Avg: {total_avg:.2f}")
+            continue
+
         # Don't insert any resources into database during resource loop - only JSON data will be inserted
+
+    # --- Subnet analysis (after main resource loop) ---
+    for vnet in network_client.virtual_networks.list_all():
+        vnet_id_parts = vnet.id.split("/")
+        resource_group_name = vnet_id_parts[4]
+        for subnet in network_client.subnets.list(resource_group_name, vnet.name):
+            # Exclude default subnets
+            if "default" in subnet.name.lower():
+                print(f"  • {subnet.name} (Default VPC) - Skipped")
+                continue
+
+            prefix = subnet.address_prefix
+            if not prefix:
+                print(f"  • {subnet.name} (VNet: {vnet.name}) - Skipped (no address prefix)")
+                continue
+
+            total_ips = ipaddress.ip_network(prefix).num_addresses - 5  # Azure reserves 5 IPs per subnet
+            used_ips = subnet.ip_configurations and len(subnet.ip_configurations) or 0
+            free_ips = total_ips - used_ips
+            free_percent = (free_ips / total_ips) * 100 if total_ips > 0 else 0
+
+            print(f"  • {subnet.name} (VNet: {vnet.name}) - {free_percent:.2f}% free IPs")
+            if free_percent > SUBNET_FREE_IP_THRESHOLD:
+                formatted_resource = {
+                    "_id": subnet.id,
+                    "CloudProvider": "azure",
+                    "ManagementUnitId": subscription_id,
+                    "ResourceType": "network",
+                    "SubResourceType": "subnet",
+                    "ResourceName": subnet.name,
+                    "Region": vnet.location,
+                    "Current_Free_IP_Percent": free_percent,
+                    "Finding": "subnet underutilised",
+                    "Recommendation": "scale down",
+                    "VNet": vnet.name,
+                    "ResourceGroup": resource_group_name,
+                    "Timestamp": datetime.datetime.utcnow().isoformat() + "Z",
+                    "Email": env.get("email", "")
+                }
+                underutilized_storage_accounts.append(formatted_resource)
+                print(f"  ⚠️  {subnet.name} (VNet: {vnet.name}) - {free_percent:.2f}% free IPs (flagged)")
 
     # Create and save underutilized storage accounts to fixed JSON file (replace every time)
     filename = "azure_underutilised.json"
@@ -235,8 +411,16 @@ def analyze_azure_resources():
         json_test = json.dumps(underutilized_storage_accounts, default=str)
         print("[INFO] JSON validation passed - data is valid for MongoDB insertion")
         
+
+          # Clear existing records from the collection before inserting new data
+        filter_query = {
+            "CloudProvider": "azure",
+            "ManagementUnitId": subscription_id,
+            "Email": env.get("email", "") 
+        }
+       
         # Clear existing records from the collection before inserting new data
-        existing_count = cost_insights_collection.count_documents({})
+        existing_count = cost_insights_collection.count_documents(filter_query)
         if existing_count > 0:
             cost_insights_collection.delete_many({})
             print(f"[INFO] Cleared {existing_count} existing records from Cost_Insights collection")
