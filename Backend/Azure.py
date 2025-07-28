@@ -408,7 +408,7 @@ def analyze_azure_resources():
                 # Build formatted_resource for subnet using the same structure as storage accounts
                 formatted_resource = {
                     "_id": subnet.id,
-                    "CloudProvider": "azure",
+                    "CloudProvider": "Azure",
                     "ManagementUnitId": subscription_id,
                     "ApplicationCode": tags.get("ApplicationCode", "na").lower(),
                     "CostCenter": tags.get("CostCenter", "na").lower(),
