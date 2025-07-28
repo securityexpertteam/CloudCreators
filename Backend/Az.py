@@ -31,6 +31,7 @@ VM_UNDERUTILIZED_MEMORY_THRESHOLD = 30
 VM_UNDERUTILIZED_NETWORK_THRESHOLD = 40
 VM_UNDERUTILIZED_TOTAL_AVG_THRESHOLD = 30
 SUBNET_FREE_IP_THRESHOLD = 90  # percent
+DISK_QUOTA_GB = int(os.getenv("DISK_QUOTA_GB", 100))  # Default to 100GB if not set
 
 try:
     client.admin.command('ismaster')
@@ -343,6 +344,43 @@ def analyze_azure_resources():
                     print(f"[UNDERUTILIZED] VM: {resource.name} - Total Avg: {total_avg:.2f}")
             continue
 
+        # --- Managed Disk logic ---
+        if resource.type and "Microsoft.Compute/disks" in resource.type:
+            # Get disk details
+            disk = compute_client.disks.get(resource_group_name=resource.id.split('/')[4], disk_name=resource.name)
+            disk_size_gb = disk.disk_size_gb
+            disk_status = getattr(disk, "disk_state", None) or getattr(disk, "provisioning_state", None)
+            attached = bool(disk.managed_by)
+            
+            findings = []
+            recommendations = []
+            underutilized = False
+
+            if disk_size_gb is not None and disk_size_gb < DISK_QUOTA_GB:
+                findings.append("disk small")
+                recommendations.append("scale down")
+                underutilized = True
+
+            if not attached:
+                findings.append("disk unattached")
+                recommendations.append("delete or attach")
+                underutilized = True
+
+            if disk_status and disk_status.lower() != "succeeded":
+                findings.append(f"disk status {disk_status}")
+                recommendations.append("investigate")
+                underutilized = True
+
+            if underutilized:
+                formatted_resource["Current_Disk_Size_GB"] = disk_size_gb
+                formatted_resource["Disk_Status"] = disk_status
+                formatted_resource["Disk_Attached"] = attached
+                formatted_resource["Finding"] = ", ".join(findings)
+                formatted_resource["Recommendation"] = ", ".join(recommendations)
+                underutilized_storage_accounts.append(formatted_resource)
+                print(f"[UNDERUTILIZED] Disk: {resource.name} - Size: {disk_size_gb}GB, Status: {disk_status}, Attached: {attached}")
+            continue
+
         # Don't insert any resources into database during resource loop - only JSON data will be inserted
 
     # --- Subnet analysis (after main resource loop) ---
@@ -367,21 +405,37 @@ def analyze_azure_resources():
 
             print(f"  • {subnet.name} (VNet: {vnet.name}) - {free_percent:.2f}% free IPs")
             if free_percent > SUBNET_FREE_IP_THRESHOLD:
+                # Build formatted_resource for subnet using the same structure as storage accounts
                 formatted_resource = {
                     "_id": subnet.id,
                     "CloudProvider": "azure",
                     "ManagementUnitId": subscription_id,
+                    "ApplicationCode": tags.get("ApplicationCode", "na").lower(),
+                    "CostCenter": tags.get("CostCenter", "na").lower(),
+                    "CIO": tags.get("CIO", "na").lower(),
+                    "Platform": tags.get("Platform", "na").lower(),
+                    "Lab": tags.get("Lab", "na").lower(),
+                    "Feature": tags.get("Feature", "na").lower(),
+                    "Owner": tags.get("Owner", "na").lower(),
+                    "TicketId": tags.get("Ticket", "na").lower(),
                     "ResourceType": "network",
                     "SubResourceType": "subnet",
                     "ResourceName": subnet.name,
-                    "Region": vnet.location,
-                    "Current_Free_IP_Percent": free_percent,
+                    "Region": vnet.location if vnet.location else "na",
+                    "TotalCost": "na",
+                    "Currency": tags.get("Currency", "usd").upper(),
                     "Finding": "subnet underutilised",
                     "Recommendation": "scale down",
-                    "VNet": vnet.name,
-                    "ResourceGroup": resource_group_name,
+                    "Environment": tags.get("Environment", "na").lower(),
                     "Timestamp": datetime.datetime.utcnow().isoformat() + "Z",
-                    "Email": env.get("email", "")
+                    "ConfidenceScore": tags.get("ConfidenceScore", "na"),
+                    "Status": "available",
+                    "Entity": tags.get("Entity", "na").lower(),
+                    "RootId": tenant_id,
+                    "Email": env.get("email", ""),
+                    "Current_Free_IP_Percent": free_percent,
+                    "VNet": vnet.name,
+                    "ResourceGroup": resource_group_name
                 }
                 underutilized_storage_accounts.append(formatted_resource)
                 print(f"  ⚠️  {subnet.name} (VNet: {vnet.name}) - {free_percent:.2f}% free IPs (flagged)")
