@@ -10,6 +10,7 @@ from azure.mgmt.monitor import MonitorManagementClient
 from pymongo import MongoClient
 import os
 
+#Take it seshaveni
 # --- MongoDB connection details ---
 MONGO_URI = os.getenv("MONGO_URI", "mongodb://localhost:27017/")
 DB_NAME = os.getenv("DB_NAME", "myDB")
