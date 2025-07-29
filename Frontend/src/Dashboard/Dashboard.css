@@ -1,0 +1,85 @@
+/* Executive-level glassy hover effect for dashboard cards and chart boxes */
+.executive-hover {
+  transition: box-shadow 0.3s, border 0.3s, background 0.3s;
+}
+.executive-hover:hover {
+  box-shadow: 0 12px 40px 0 rgba(26,41,128,0.18), 0 2px 16px 0 rgba(67,206,162,0.10);
+  border: 2.5px solid #26D0CE;
+  background: linear-gradient(135deg, rgba(255,255,255,0.98) 70%, rgba(38,208,206,0.13) 100%);
+  filter: brightness(1.03) saturate(1.08);
+}
+/* Animation Keyframes and Classes for Dashboard.js */
+@keyframes fadeInUp {
+  0% { opacity: 0; transform: translateY(40px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+@keyframes fadeInDown {
+  0% { opacity: 0; transform: translateY(-40px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+@keyframes fadeInUpRow {
+  0% { opacity: 0; transform: translateY(20px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+.fadeInUp {
+  animation: fadeInUp 1.2s cubic-bezier(.77,0,.18,1);
+}
+.fadeInDown {
+  animation: fadeInDown 1.2s cubic-bezier(.77,0,.18,1);
+}
+.fadeInUpRow {
+  animation: fadeInUpRow 0.7s both;
+}
+
+.App {
+  padding: 20px;
+  font-family: Arial, sans-serif;
+}
+
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.filter-btn {
+  padding: 8px 16px;
+  background-color: #0078d7;
+  color: white;
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+}
+
+.filter-form {
+  margin: 10px 0;
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.filter-form input {
+  padding: 6px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+}
+
+.filter-form button {
+  padding: 6px 12px;
+  background-color: #28a745;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 15px;
+}
+
+table th, table td {
+  border: 1px solid #ddd;
+  padding: 8px;
+}
