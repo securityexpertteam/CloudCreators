@@ -29,15 +29,15 @@ sc_stor_size_in_gb = storage_config.get("storage_size") if storage_config else 1
 
 # Fetch VM thresholds from standardConfigsDb collection
 vm_config = standard_config_collection.find_one({}, {
-    "cpu_usage": 1,
-    "memory_usage": 1,
-    "network_usage": 1,
+    "cmp_cpu_usage": 1,
+    "cmp_memory_usage": 1,
+    "cmp_network_usage": 1,
     "_id": 0
 })
 
-VM_UNDERUTILIZED_CPU_THRESHOLD = vm_config.get("cpu_usage", 15) if vm_config else 15
-VM_UNDERUTILIZED_MEMORY_THRESHOLD = vm_config.get("memory_usage", 30) if vm_config else 30
-VM_UNDERUTILIZED_NETWORK_THRESHOLD = vm_config.get("network_usage", 40) if vm_config else 40
+VM_UNDERUTILIZED_CPU_THRESHOLD = vm_config.get("cmp_cpu_usage", 15) if vm_config else 15
+VM_UNDERUTILIZED_MEMORY_THRESHOLD = vm_config.get("cmp_memory_usage", 30) if vm_config else 30
+VM_UNDERUTILIZED_NETWORK_THRESHOLD = vm_config.get("cmp_network_usage", 40) if vm_config else 40
 VM_UNDERUTILIZED_TOTAL_AVG_THRESHOLD = 30
 SUBNET_FREE_IP_THRESHOLD = 90  # percent
 DISK_QUOTA_GB = int(os.getenv("DISK_QUOTA_GB", 100))  # Default to 100GB if not set
