@@ -203,7 +203,7 @@ def analyze_azure_resources():
     network_client = NetworkManagementClient(credential, subscription_id)
 
     end_date = datetime.datetime.utcnow()
-    start_date = end_date - datetime.timedelta(days=7)
+    start_date = end_date - datetime.timedelta(days=30)
 
     cost_query = {
         "type": "Usage",
