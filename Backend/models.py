@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel,EmailStr
 from typing import Optional
 from typing import List
 from datetime import datetime
@@ -52,31 +52,62 @@ class Resource(BaseModel):
     RootId: str
     Email: Optional[str] = None
 
+# class StandardConfig(BaseModel):
+#     email: str  # <-- Store user's email with every config!
+#     type: str
+
+#     # Fields for Compute Engine
+#     cpu_usage: Optional[int] = None
+#     memory_usage: Optional[int] = None
+#     network_usage: Optional[int] = None
+
+#     # Fields for Kubernetes
+#     node_cpu_percentage: Optional[int] = None
+#     node_memory_percentage: Optional[int] = None
+#     node_count: Optional[int] = None
+#     volume_percentage: Optional[int] = None
+
+#     # Fields for Cloud Storage
+#     storage_size: Optional[int] = None
+#     access_frequency: Optional[str] = None
+#     network_egress: Optional[int] = None
+#     lifecycle_enabled: Optional[bool] = None
+
+#     # Fields for General Configuration
+#     untagged: Optional[bool] = None
+#     orphaned: Optional[bool] = None
+
 class StandardConfig(BaseModel):
-    email: str  # <-- Store user's email with every config!
+    email: str
     type: str
 
-    # Fields for Compute Engine
-    cpu_usage: Optional[int] = None
-    memory_usage: Optional[int] = None
-    network_usage: Optional[int] = None
+    # Compute Engine
+    cmp_cpu_usage: Optional[int] = None
+    cmp_memory_usage: Optional[int] = None
+    cmp_network_usage: Optional[int] = None
 
-    # Fields for Kubernetes
-    node_cpu_percentage: Optional[int] = None
-    node_memory_percentage: Optional[int] = None
-    node_count: Optional[int] = None
-    volume_percentage: Optional[int] = None
+    # Kubernetes
+    k8s_node_cpu_percentage: Optional[int] = None
+    k8s_node_memory_percentage: Optional[int] = None
+    k8s_node_count: Optional[int] = None
+    k8s_volume_percentage: Optional[int] = None
 
-    # Fields for Cloud Storage
+    # Cloud Storage
     storage_size: Optional[int] = None
     access_frequency: Optional[str] = None
     network_egress: Optional[int] = None
     lifecycle_enabled: Optional[bool] = None
 
-    # Fields for General Configuration
+    # General
     untagged: Optional[bool] = None
     orphaned: Optional[bool] = None
 
-class SignupUser(BaseModel):
+class SigninUser(BaseModel):
     email: str
     password: str
+    
+class SignupUser(BaseModel):
+    firstname: str
+    lastname: str
+    email: EmailStr
+    password: str   

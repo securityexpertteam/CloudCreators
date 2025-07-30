@@ -10,6 +10,7 @@ import Footer from "./Footer/Footer";
 import Dashboard from "./Dashboard/Dashboard";
 import { useEffect } from "react";
 import ScheduleScan from "./ScheduleScan/Schedulescan";
+import SignUp from "./SignUp/SignUp"; // Import SignUp component
 
 // Move this part inside a separate component so we can use hooks
 function AppContent() {
@@ -27,6 +28,7 @@ function AppContent() {
         <Routes>
           <Route path="/" element={<SignIn />} />
           <Route path="/signin" element={<SignIn />} />
+          <Route path="/signup" element={<SignUp />} />
           <Route path="/config" element={<StandardConfigForm />} />
           <Route path="/UserOnboarding" element={<UserOnboarding />} />
           <Route path="/dashboard" element={<Dashboard />} />
@@ -94,7 +96,6 @@ export default App;
 // }
 
 // export default App;
-
 
 
 

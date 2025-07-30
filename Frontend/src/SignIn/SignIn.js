@@ -70,7 +70,17 @@ const SignIn = () => {
           <h2>Welcome Back</h2>
           <p className="subtitle">Sign in to your account to continue</p>
         </div>
-        {error && <div className="signin-error">{error}</div>}
+        {error && (
+          <div className="signin-error">
+            {Array.isArray(error)
+              ? error.map((err, idx) => (
+                  <div key={idx}>
+                    {err.msg || JSON.stringify(err)}
+                  </div>
+                ))
+              : error}
+          </div>
+        )}
         <div className="field">
           <label htmlFor="email"><b>Email Address</b></label>
           <input
@@ -105,6 +115,16 @@ const SignIn = () => {
         <button type="submit" className="signin-button" disabled={submitting}>
           {submitting ? "Signing In..." : "Sign In"}
         </button>
+        <div className="signup-redirect">
+          <button
+            type="button"
+            className="signup-link"
+            onClick={() => navigate("/signup")}
+            style={{ marginTop: "16px", background: "none", border: "none", color: "#007bff", cursor: "pointer", textDecoration: "underline" }}
+          >
+            I don't have account
+          </button>
+        </div>
       </form>
     </div>
   );
