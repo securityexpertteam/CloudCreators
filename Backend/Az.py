@@ -26,9 +26,18 @@ standard_config_collection = db["standardConfigsDb"]
 # Get storage_size value from standardConfigsDb collection
 storage_config = standard_config_collection.find_one({}, {"storage_size": 1, "_id": 0})
 sc_stor_size_in_gb = storage_config.get("storage_size") if storage_config else 1  # Default to 1 if not found
-VM_UNDERUTILIZED_CPU_THRESHOLD = 15
-VM_UNDERUTILIZED_MEMORY_THRESHOLD = 30
-VM_UNDERUTILIZED_NETWORK_THRESHOLD = 40
+
+# Fetch VM thresholds from standardConfigsDb collection
+vm_config = standard_config_collection.find_one({}, {
+    "cpu_usage": 1,
+    "memory_usage": 1,
+    "network_usage": 1,
+    "_id": 0
+})
+
+VM_UNDERUTILIZED_CPU_THRESHOLD = vm_config.get("cpu_usage", 15) if vm_config else 15
+VM_UNDERUTILIZED_MEMORY_THRESHOLD = vm_config.get("memory_usage", 30) if vm_config else 30
+VM_UNDERUTILIZED_NETWORK_THRESHOLD = vm_config.get("network_usage", 40) if vm_config else 40
 VM_UNDERUTILIZED_TOTAL_AVG_THRESHOLD = 30
 SUBNET_FREE_IP_THRESHOLD = 90  # percent
 DISK_QUOTA_GB = int(os.getenv("DISK_QUOTA_GB", 100))  # Default to 100GB if not set
@@ -375,8 +384,8 @@ def analyze_azure_resources():
                 formatted_resource["Current_Disk_Size_GB"] = disk_size_gb
                 formatted_resource["Disk_Status"] = disk_status
                 formatted_resource["Disk_Attached"] = attached
-                formatted_resource["Finding"] = ", ".join(findings)
-                formatted_resource["Recommendation"] = ", ".join(recommendations)
+                formatted_resource["Finding"] = "Disk underutilised"
+                formatted_resource["Recommendation"] = "Scale Down"
                 underutilized_storage_accounts.append(formatted_resource)
                 print(f"[UNDERUTILIZED] Disk: {resource.name} - Size: {disk_size_gb}GB, Status: {disk_status}, Attached: {attached}")
             continue
@@ -406,6 +415,8 @@ def analyze_azure_resources():
             print(f"  • {subnet.name} (VNet: {vnet.name}) - {free_percent:.2f}% free IPs")
             if free_percent > SUBNET_FREE_IP_THRESHOLD:
                 # Build formatted_resource for subnet using the same structure as storage accounts
+                subnet_normalized_id = normalize_resource_id(subnet.id)
+                total_cost = resource_cost_map.get(subnet_normalized_id, 0)
                 formatted_resource = {
                     "_id": subnet.id,
                     "CloudProvider": "azure",
@@ -422,7 +433,7 @@ def analyze_azure_resources():
                     "SubResourceType": "subnet",
                     "ResourceName": subnet.name,
                     "Region": vnet.location if vnet.location else "na",
-                    "TotalCost": "na",
+                    "TotalCost": total_cost,
                     "Currency": tags.get("Currency", "usd").upper(),
                     "Finding": "subnet underutilised",
                     "Recommendation": "scale down",
