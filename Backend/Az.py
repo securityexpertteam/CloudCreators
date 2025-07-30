@@ -419,7 +419,7 @@ def analyze_azure_resources():
                 total_cost = resource_cost_map.get(subnet_normalized_id, 0)
                 formatted_resource = {
                     "_id": subnet.id,
-                    "CloudProvider": "azure",
+                    "CloudProvider": "Azure",
                     "ManagementUnitId": subscription_id,
                     "ApplicationCode": tags.get("ApplicationCode", "na").lower(),
                     "CostCenter": tags.get("CostCenter", "na").lower(),
@@ -429,7 +429,7 @@ def analyze_azure_resources():
                     "Feature": tags.get("Feature", "na").lower(),
                     "Owner": tags.get("Owner", "na").lower(),
                     "TicketId": tags.get("Ticket", "na").lower(),
-                    "ResourceType": "network",
+                    "ResourceType": "Network",
                     "SubResourceType": "subnet",
                     "ResourceName": subnet.name,
                     "Region": vnet.location if vnet.location else "na",
