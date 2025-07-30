@@ -24,7 +24,8 @@
 from google.cloud import asset_v1, monitoring_v3
 from google.cloud import storage as gcs_storage
 from google.oauth2 import service_account
-from datetime import datetime, timedelta, UTC
+from datetime import datetime, timedelta, timezone
+utc = timezone.utc
 import time
 from googleapiclient import discovery
 import ipaddress
@@ -127,7 +128,7 @@ if not PROJECT_ID:
 # Get email from environmentOnboarding collection
 USER_EMAIL = get_email_from_environment_onboarding()
 
-CREDENTIALS_PATH = r"C:\Users\lab1\Desktop\MyWork\New\CloudCreators\Backend\Creds\gcp_prd_436_cio.json"
+CREDENTIALS_PATH = r"C:\Users\ashis\updatedGCP(2)\CloudCreators\Backend\Creds\gcp_prd_436_cio.json"
 
 # Analysis configuration
 DISK_QUOTA_GB = 100  # Disk quota for utilization calculation
@@ -157,7 +158,7 @@ def get_average_utilization(project_id, resource_type, resource_name, credential
     client = monitoring_v3.MetricServiceClient(credentials=credentials)
     
     # Set time window for the last 7 days
-    end_time = datetime.now(UTC)
+    end_time = datetime.now(utc)
     start_time = end_time - timedelta(days=7)
 
     interval = monitoring_v3.TimeInterval(
@@ -283,7 +284,7 @@ def get_resource_cost_data(project_id, resource_name=None, service_name=None, da
     """
     try:
         # Calculate date range
-        end_date = datetime.now(UTC)
+        end_date = datetime.now(utc)
         start_date = end_date - timedelta(days=days)
         
         # Format dates for Cloud Billing API
@@ -1197,7 +1198,7 @@ def insert_to_mongodb(records):
         
         # Add timestamp to each record
         for record in records:
-            record['InsertedAt'] = datetime.now(UTC).isoformat()
+            record['InsertedAt'] = datetime.now(utc).isoformat()
         
         # Insert all records
         result = collection.insert_many(records)
@@ -1337,7 +1338,7 @@ def extract_resource_metadata(labels, resource_name, resource_type, region=None,
         "Finding": finding,
         "Recommendation": recommendation,
         "Environment": get_label_value("environment"),
-        "Timestamp": datetime.now(UTC).isoformat().replace('+00:00', 'Z'),
+        "Timestamp": datetime.now(utc).isoformat().replace('+00:00', 'Z'),
         "ConfidenceScore": "NA",
         "Status": resource_status,
         "Entity": get_label_value("entity"),
