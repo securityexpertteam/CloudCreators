@@ -2,14 +2,57 @@ import datetime
 import time
 import subprocess
 from pymongo import MongoClient
+from azure.identity import ClientSecretCredential
+from azure.keyvault.secrets import SecretClient
+import json
+
 
 print("🚀 MongoDB Trigger Watcher")
 print("Database: myDB | Collection: triggers")
 
 # Connect to MongoDB
-client = MongoClient("mongodb://localhost:27017/")
-triggers_collection = client['myDB']['triggers']
-Enviroment_Collection = client['myDB']['environmentOnboarding']
+mongo_uri = "mongodb://localhost:27017/"
+db_name = "myDB"  # Replace with your database name
+env_collection_name = 'environmentOnboarding'
+triggers_collection_name = 'triggers'
+client = MongoClient(mongo_uri)
+triggers_collection = client[db_name][triggers_collection_name]
+Enviroment_Collection = client[db_name][env_collection_name]
+
+def fetch_credentials(mongo_uri, db_name, collection_name, email_to_find, cloud_name, vault_name, secret_name):
+    
+    # Construct the vault URL
+    vault_url = f"https://{vault_name}.vault.azure.net/"
+
+    # Connect to MongoDB
+    client = MongoClient(mongo_uri)
+    db = client[db_name]
+    collection = db[collection_name]
+
+    # Query the collection
+    record = collection.find_one({"email": email_to_find, "cloudName": cloud_name})
+
+    if record:
+        # Replace with actual credentials
+        tenant_id = record['rootId']
+        client_id = record['srvaccntName']  # App registered with API permissions
+        client_secret = record['srvacctPass']
+
+        # --- Authenticate and fetch secret ---
+        credential = ClientSecretCredential(tenant_id, client_id, client_secret)
+        kv_client = SecretClient(vault_url=vault_url, credential=credential)
+        secret_value = kv_client.get_secret(secret_name).value
+        secret_value = secret_value.replace('\\"', '"').replace("'", "")
+
+        # --- Parse JSON and extract fields ---
+        secret_json = json.loads(secret_value)
+        username = secret_json.get("username")
+        password = secret_json.get("password")
+
+        return username, password
+    else:
+        raise ValueError(f"No record found for email: {email_to_find}")
+
 
 try:
     while True:
@@ -48,8 +91,27 @@ try:
                 if Environment_List:
                     for Environment in Environment_List:
                             cloud_name = ''
+                            tenant_id = ''
+                            client_id =''
+                            client_secret= vault_name = secret_name = email_to_find = ''
                             cloud_name = Environment.get('cloudName')
+                            tenant_id = Environment.get('rootId')
+                            client_id = Environment.get('srvaccntName')  # App registered with API permissions
+                            client_secret = Environment.get('srvacctPass')
+                            vault_name = Environment.get('vaultname')
+                            secret_name = Environment.get('secretname')
+                            email_to_find = Environment.get('email')
+
                             if cloud_name == 'Azure':
+
+                                # Send the Data
+                                  # Replace with your MongoDB URI
+                                
+                                
+                          
+                                username, password = fetch_credentials(mongo_uri, db_name, env_collection_name, email_to_find, cloud_name, vault_name, secret_name)
+                                print(f"Username: {username}")
+                                print(f"Password: {password}")
                                 print(f"   🔵 Running Azure script")
                                 subprocess.run(["python", "Azure.py"])
                             elif cloud_name == 'GCP':
