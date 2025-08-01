@@ -1,3 +1,4 @@
+import argparse
 import re
 import json
 import datetime
@@ -13,6 +14,27 @@ from pymongo import MongoClient
 import os
 import ipaddress
 
+# --- Argument Parser for Azure Credentials ---
+parser = argparse.ArgumentParser(description="Azure Resource Optimization Script")
+parser.add_argument("--client_id", required=True, help="Azure Client ID")
+parser.add_argument("--client_secret", required=True, help="Azure Client Secret")
+parser.add_argument("--tenant_id", required=True, help="Azure Tenant ID")
+parser.add_argument("--subscription_id", required=True, help="Azure Subscription ID")
+parser.add_argument("--email", required=True, help="User Email for filtering configs")
+args = parser.parse_args()
+
+client_id = args.client_id
+client_secret = args.client_secret
+tenant_id = args.tenant_id
+subscription_id = args.subscription_id
+user_email = args.email
+
+print("Client ID:", args.client_id)
+print("Client Secret:", args.client_secret)
+print("Tenant ID:", args.tenant_id)
+print("Subscription ID:", args.subscription_id)
+print("Email:", args.email)
+
 # --- MongoDB connection details ---
 MONGO_URI = os.getenv("MONGO_URI", "mongodb://localhost:27017/")
 DB_NAME = os.getenv("DB_NAME", "myDB")
@@ -23,15 +45,28 @@ cost_insights_collection = db["Cost_Insights"]
 environment_onboarding_collection = db["environmentOnboarding"]
 standard_config_collection = db["standardConfigsDb"]
 
-# Get storage_size value from standardConfigsDb collection
-storage_config = standard_config_collection.find_one({}, {"storage_size": 1, "_id": 0})
-sc_stor_size_in_gb = storage_config.get("storage_size") if storage_config else 1  # Default to 1 if not found
-VM_UNDERUTILIZED_CPU_THRESHOLD = 15
-VM_UNDERUTILIZED_MEMORY_THRESHOLD = 30
-VM_UNDERUTILIZED_NETWORK_THRESHOLD = 40
-VM_UNDERUTILIZED_TOTAL_AVG_THRESHOLD = 30
-SUBNET_FREE_IP_THRESHOLD = 90  # percent
-DISK_QUOTA_GB = int(os.getenv("DISK_QUOTA_GB", 100))  # Default to 100GB if not set
+# Get stor_size and thresholds from standardConfigsDb collection for the current email
+config_thresholds = standard_config_collection.find_one(
+    {"email": user_email},
+    {
+        "cmp_cpu_usage": 1,
+        "cmp_memory_usage": 1,
+        "cmp_network_usage": 1,
+        "stor_size": 1,
+        "subnet_free_ip_threshold": 1,
+        "disk_quota_gb": 1,
+        "_id": 0
+    }
+)
+
+VM_UNDERUTILIZED_CPU_THRESHOLD = config_thresholds.get("cmp_cpu_usage") if config_thresholds else None
+VM_UNDERUTILIZED_MEMORY_THRESHOLD = config_thresholds.get("cmp_memory_usage") if config_thresholds else None
+VM_UNDERUTILIZED_NETWORK_THRESHOLD = config_thresholds.get("cmp_network_usage") if config_thresholds else None
+sc_stor_size_in_gb = config_thresholds.get("stor_size") if config_thresholds else None
+#SUBNET_FREE_IP_THRESHOLD = config_thresholds.get("subnet_free_ip_threshold") if config_thresholds else None
+#DISK_QUOTA_GB = int(config_thresholds.get("disk_quota_gb")) if config_thresholds and config_thresholds.get("disk_quota_gb") is not None else None
+DISK_QUOTA_GB = 100
+SUBNET_FREE_IP_THRESHOLD = 100
 
 try:
     client.admin.command('ismaster')
@@ -158,33 +193,8 @@ def get_subnet_free_ip_percent(network_client, resource_group, vnet_name, subnet
 def analyze_azure_resources():
     """Analyze Azure resources and identify underutilized storage accounts."""
     print("[INFO] Starting Azure resource optimization analysis...")
-    
-    # Get the latest user from users collection for Azure credentials
-    try:
-        latest_env = environment_onboarding_collection.find({"cloudName": "Azure"}).sort("_id", -1).limit(1)
-        env = next(latest_env, None)
-        if not env:
-            print("[ERROR] No Azure environment found in environmentOnboarding collection")
-            return
-        
-        # Extract Azure credentials from user record
-        client_id = env.get("srvaccntName")           # client_id
-        client_secret = env.get("srvacctPass") 
-       
-        tenant_id = env.get("rootId")                 # tenant_id
-        subscription_id = env.get("managementUnitId") # subscription_id
-        
-        if not all([client_id, client_secret, tenant_id, subscription_id]):
-            print(f"[ERROR] Missing Azure credentials in environmentOnboarding record: {env.get('_id')}")
-            return
-            
-        #print(f"[INFO] Using credentials from environmentOnboarding: {client_id}")
-        
-    except Exception as e:
-        print(f"[ERROR] Failed to retrieve user credentials: {e}")
-        return
 
-    # === Azure scan logic ===
+    # Use credentials from argparse
     credential = ClientSecretCredential(tenant_id, client_id, client_secret)
     resource_client = ResourceManagementClient(credential, subscription_id)
     cost_client = CostManagementClient(credential)
@@ -297,17 +307,17 @@ def analyze_azure_resources():
             "Status": tags.get("Status", "available").lower(),
             "Entity": tags.get("Entity", "na").lower(),
             "RootId": tenant_id,            
-            "Email": env.get("email", "")      
+            "Email": user_email      
         }
 
         # Check if this is a storage account and handle filtering
         if resource.type and "Microsoft.Storage/storageAccounts" in resource.type:
             resource_group_name = resource.id.split('/')[4] if len(resource.id.split('/')) > 4 else None
             if resource_group_name:
-                storage_size_gb = get_storage_account_size(storage_client, resource_group_name, resource.name)
-                if storage_size_gb is not None and storage_size_gb < sc_stor_size_in_gb:
-                    formatted_resource["Current_Size"] = storage_size_gb
-                    print(f"[UNDERUTILIZED] Storage Account: {resource.name} - Size: {storage_size_gb}GB")
+                stor_size_gb = get_storage_account_size(storage_client, resource_group_name, resource.name)
+                if stor_size_gb is not None and sc_stor_size_in_gb is not None and stor_size_gb < sc_stor_size_in_gb:
+                    formatted_resource["Current_Size"] = stor_size_gb
+                    print(f"[UNDERUTILIZED] Storage Account: {resource.name} - Size: {stor_size_gb}GB")
                     underutilized_storage_accounts.append(formatted_resource)
             continue
 
@@ -432,7 +442,7 @@ def analyze_azure_resources():
                     "Status": "available",
                     "Entity": tags.get("Entity", "na").lower(),
                     "RootId": tenant_id,
-                    "Email": env.get("email", ""),
+                    "Email": user_email,
                     "Current_Free_IP_Percent": free_percent,
                     "VNet": vnet.name,
                     "ResourceGroup": resource_group_name
@@ -470,7 +480,7 @@ def analyze_azure_resources():
         filter_query = {
             "CloudProvider": "Azure",
             "ManagementUnitId": subscription_id,
-            "Email": env.get("email", "") 
+            "Email": user_email
         }
        
         # Clear existing records from the collection before inserting new data
