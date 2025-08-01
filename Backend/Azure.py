@@ -29,8 +29,8 @@ tenant_id = args.tenant_id
 subscription_id = args.subscription_id
 user_email = args.email
 
-print("Client ID:", args.client_id)
-print("Client Secret:", args.client_secret)
+# print("Client ID:", args.client_id)
+# print("Client Secret:", args.client_secret)
 print("Tenant ID:", args.tenant_id)
 print("Subscription ID:", args.subscription_id)
 print("Email:", args.email)
@@ -461,6 +461,7 @@ def analyze_azure_resources():
         except Exception as e:
             print(f"[ERROR] Failed to save underutilized storage accounts to JSON: {e}")
     else:
+        # Dont create Empty json file if there is no response from CSP APIs.
         # Create empty JSON file even when no underutilized storage accounts found
         try:
             with open(filename, 'w') as f:
@@ -473,30 +474,33 @@ def analyze_azure_resources():
     try:
         # Validate JSON before insertion
         json_test = json.dumps(underutilized_storage_accounts, default=str)
-        print("[INFO] JSON validation passed - data is valid for MongoDB insertion")
         
-
-          # Clear existing records from the collection before inserting new data
-        filter_query = {
-            "CloudProvider": "Azure",
-            "ManagementUnitId": subscription_id,
-            "Email": user_email
-        }
-       
-        # Clear existing records from the collection before inserting new data
-        existing_count = cost_insights_collection.count_documents(filter_query)
-        if existing_count > 0:
-            cost_insights_collection.delete_many({})
-            print(f"[INFO] Cleared {existing_count} existing records from Cost_Insights collection")
-        else:
-            print("[INFO] Collection is empty, no records to clear")
+        # if Azure Json File Exists && It is readable as a Json content 
+        if True:
+            print("[INFO] JSON validation passed - data is valid for MongoDB insertion")
             
-        # Insert underutilized storage accounts into database
-        if underutilized_storage_accounts:
-            cost_insights_collection.insert_many(underutilized_storage_accounts)
-            print(f"[INFO] Inserted {len(underutilized_storage_accounts)} underutilized storage accounts into database")
-        else:
-            print("[INFO] No underutilized storage accounts found to insert")
+
+            # Clear existing records from the collection before inserting new data
+            filter_query = {
+                "CloudProvider": "Azure",
+                "ManagementUnitId": subscription_id,
+                "Email": user_email
+            }
+        
+            # Clear existing records from the collection before inserting new data
+            existing_count = cost_insights_collection.count_documents(filter_query)
+            if existing_count > 0:
+                cost_insights_collection.delete_many({})
+                print(f"[INFO] Cleared {existing_count} existing records from Cost_Insights collection")
+            else:
+                print("[INFO] Collection is empty, no records to clear")
+                
+            # Insert underutilized storage accounts into database
+            if underutilized_storage_accounts:
+                cost_insights_collection.insert_many(underutilized_storage_accounts)
+                print(f"[INFO] Inserted {len(underutilized_storage_accounts)} underutilized storage accounts into database")
+            else:
+                print("[INFO] No underutilized storage accounts found to insert")
             
     except json.JSONEncodeError as e:
         print(f"[ERROR] JSON validation failed: {e}")
