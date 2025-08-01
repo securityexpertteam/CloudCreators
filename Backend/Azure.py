@@ -249,7 +249,7 @@ def analyze_azure_resources():
 
     matched_count = 0
     unmatched_count = 0
-    underutilized_storage_accounts = []
+    underutilized_resources = []
 
     # Iterate and format output
     for resource in resource_client.resources.list():
@@ -318,7 +318,7 @@ def analyze_azure_resources():
                 if stor_size_gb is not None and sc_stor_size_in_gb is not None and stor_size_gb < sc_stor_size_in_gb:
                     formatted_resource["Current_Size"] = stor_size_gb
                     print(f"[UNDERUTILIZED] Storage Account: {resource.name} - Size: {stor_size_gb}GB")
-                    underutilized_storage_accounts.append(formatted_resource)
+                    underutilized_resources.append(formatted_resource)
             continue
 
         # --- Virtual Machine logic ---
@@ -350,7 +350,7 @@ def analyze_azure_resources():
                 if total_avg > VM_UNDERUTILIZED_TOTAL_AVG_THRESHOLD:
                     formatted_resource["Finding"] = "VM underutilised"
                     formatted_resource["Recommendation"] = "Scale Down"
-                    underutilized_storage_accounts.append(formatted_resource)
+                    underutilized_resources.append(formatted_resource)
                     print(f"[UNDERUTILIZED] VM: {resource.name} - Total Avg: {total_avg:.2f}")
             continue
 
@@ -387,7 +387,7 @@ def analyze_azure_resources():
                 formatted_resource["Disk_Attached"] = attached
                 formatted_resource["Finding"] = ", ".join(findings)
                 formatted_resource["Recommendation"] = ", ".join(recommendations)
-                underutilized_storage_accounts.append(formatted_resource)
+                underutilized_resources.append(formatted_resource)
                 print(f"[UNDERUTILIZED] Disk: {resource.name} - Size: {disk_size_gb}GB, Status: {disk_status}, Attached: {attached}")
             continue
 
@@ -447,33 +447,27 @@ def analyze_azure_resources():
                     "VNet": vnet.name,
                     "ResourceGroup": resource_group_name
                 }
-                underutilized_storage_accounts.append(formatted_resource)
+                underutilized_resources.append(formatted_resource)
                 print(f"  ⚠️  {subnet.name} (VNet: {vnet.name}) - {free_percent:.2f}% free IPs (flagged)")
 
-    # Create and save underutilized storage accounts to fixed JSON file (replace every time)
+    # Create and save underutilized resources to fixed JSON file (replace every time)
     filename = "azure_underutilised.json"
     
-    if underutilized_storage_accounts:
+    if underutilized_resources:
         try:
             with open(filename, 'w') as f:
-                json.dump(underutilized_storage_accounts, f, indent=2, default=str)
-            print(f"[INFO] Saved {len(underutilized_storage_accounts)} underutilized storage accounts to {filename}")
+                json.dump(underutilized_resources, f, indent=2, default=str)
+            print(f"[INFO] Saved {len(underutilized_resources)} underutilized resources to {filename}")
         except Exception as e:
-            print(f"[ERROR] Failed to save underutilized storage accounts to JSON: {e}")
+            print(f"[ERROR] Failed to save underutilized resources to JSON: {e}")
     else:
-        # Dont create Empty json file if there is no response from CSP APIs.
-        # Create empty JSON file even when no underutilized storage accounts found
-        try:
-            with open(filename, 'w') as f:
-                json.dump([], f, indent=2)
-            print(f"[INFO] Created empty JSON file {filename} - no underutilized storage accounts found")
-        except Exception as e:
-            print(f"[ERROR] Failed to create empty JSON file: {e}")
+        # Don't create empty JSON file if there is no response from CSP APIs or no underutilized resources found
+        print(f"[INFO] No underutilized resources found. JSON file not created.")
 
-    # Insert ONLY underutilized storage accounts into database based on JSON file content
+    # Insert ONLY underutilized resources into database based on JSON file content
     try:
         # Validate JSON before insertion
-        json_test = json.dumps(underutilized_storage_accounts, default=str)
+        json_test = json.dumps(underutilized_resources, default=str)
         
         # if Azure Json File Exists && It is readable as a Json content 
         if True:
@@ -496,9 +490,9 @@ def analyze_azure_resources():
                 print("[INFO] Collection is empty, no records to clear")
                 
             # Insert underutilized storage accounts into database
-            if underutilized_storage_accounts:
-                cost_insights_collection.insert_many(underutilized_storage_accounts)
-                print(f"[INFO] Inserted {len(underutilized_storage_accounts)} underutilized storage accounts into database")
+            if underutilized_resources:
+                cost_insights_collection.insert_many(underutilized_resources)
+                print(f"[INFO] Inserted {len(underutilized_resources)} underutilized storage accounts into database")
             else:
                 print("[INFO] No underutilized storage accounts found to insert")
             
@@ -519,7 +513,7 @@ def analyze_azure_resources():
     print(f"[INFO] Total resources processed: {matched_count + unmatched_count}")
     print(f"[INFO] Matched resources with cost data: {matched_count}")
     print(f"[INFO] Unmatched resources (no cost data): {unmatched_count}")
-    print(f"[INFO] Underutilized storage accounts (<1GB): {len(underutilized_storage_accounts)}")
+    print(f"[INFO] Underutilized storage accounts (<1GB): {len(underutilized_resources)}")
     print("[INFO] Azure resource optimization analysis completed.")
 
 if __name__ == "__main__":
