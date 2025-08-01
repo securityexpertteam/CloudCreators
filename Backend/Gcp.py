@@ -24,14 +24,14 @@
 from google.cloud import asset_v1, monitoring_v3
 from google.cloud import storage as gcs_storage
 from google.oauth2 import service_account
-from datetime import datetime, timedelta, timezone
-utc = timezone.utc
+from datetime import datetime, timedelta, UTC
 import time
 from googleapiclient import discovery
 import ipaddress
 import json
 import os
 import os
+from pathlib import Path
 
 # MongoDB integration
 try:
@@ -50,6 +50,51 @@ MONGODB_HOST = "localhost"  # Change this to your MongoDB server IP/hostname
 MONGODB_PORT = 27017        # Change this to your MongoDB port
 MONGODB_DATABASE = "myDB"   # Change this to your database name
 MONGODB_COLLECTION = "Cost_Insights"  # Change this to your collection name
+
+
+def get_thresholds_from_mongodb(email, collection_name="thresholds"):
+    """
+    Fetch analysis thresholds from a MongoDB collection based on user email.
+
+    Args:
+        email (str): The user email to look up for settings.
+        collection_name (str): The name of the collection containing the thresholds.
+
+    Returns:
+        dict: A dictionary of thresholds.
+    """
+    # --- Define default thresholds in case some are missing ---
+    defaults = {
+        'cmp_cpu_usage': 15.0,
+        'storage_utilization': 20.0,
+        'disk_underutilized_gb': 100,
+        'subnet_free_ip_percentage': 90.0
+    }
+
+    if not MONGODB_AVAILABLE:
+        print("⚠️ pymongo not available. Using default thresholds.")
+        return defaults
+
+    try:
+        client = MongoClient(host=MONGODB_HOST, port=MONGODB_PORT)
+        db = client[MONGODB_DATABASE]
+        thresholds_collection = db[collection_name]
+
+        user_thresholds = thresholds_collection.find_one({"email": email})
+        client.close()
+
+        if user_thresholds:
+            print(f"✅ Retrieved thresholds from MongoDB for {email}")
+            # Merge user settings with defaults to ensure all keys are present
+            defaults.update(user_thresholds)
+            return defaults
+        else:
+            print(f"⚠️ No thresholds found for {email}. Using default values.")
+            return defaults
+
+    except Exception as e:
+        print(f"❌ Error fetching thresholds from MongoDB: {e}. Using default values.")
+        return defaults
 
 def get_project_id_from_mongodb():
     """
@@ -128,10 +173,16 @@ if not PROJECT_ID:
 # Get email from environmentOnboarding collection
 USER_EMAIL = get_email_from_environment_onboarding()
 
-CREDENTIALS_PATH = r"C:\Users\ashis\updatedGCP(2)\CloudCreators\Backend\Creds\gcp_prd_436_cio.json"
+#CREDENTIALS_PATH = r"C:\Users\lab1\Desktop\MyWork\New\CloudCreators\Backend\Creds\gcp_prd_436_cio.json"
+
+script_dir = Path(__file__).resolve().parent
+
+# Build the path to the credentials file
+CREDENTIALS_PATH = script_dir / "Creds" / "pro-plasma-465515-k1-833ec1affeb6.json"
+
 
 # Analysis configuration
-DISK_QUOTA_GB = 100  # Disk quota for utilization calculation
+#DISK_QUOTA_GB = 100  # Disk quota for utilization calculation
 
 # Initialize compute service for subnet and disk analysis
 credentials_compute = service_account.Credentials.from_service_account_file(CREDENTIALS_PATH)
@@ -158,7 +209,7 @@ def get_average_utilization(project_id, resource_type, resource_name, credential
     client = monitoring_v3.MetricServiceClient(credentials=credentials)
     
     # Set time window for the last 7 days
-    end_time = datetime.now(utc)
+    end_time = datetime.now(UTC)
     start_time = end_time - timedelta(days=7)
 
     interval = monitoring_v3.TimeInterval(
@@ -284,7 +335,7 @@ def get_resource_cost_data(project_id, resource_name=None, service_name=None, da
     """
     try:
         # Calculate date range
-        end_date = datetime.now(utc)
+        end_date = datetime.now(UTC)
         start_date = end_date - timedelta(days=days)
         
         # Format dates for Cloud Billing API
@@ -456,15 +507,19 @@ def get_detailed_resource_costs(project_id, resource_type, resource_size=None, d
 # RESOURCE ANALYSIS FUNCTIONS
 # ================================================================================
 
-def categorize_gcp_resources(project_id, credentials_path, bucket_quota_gb=100):
+def categorize_gcp_resources(project_id, credentials_path, bucket_quota_gb, thresholds):
     """
     Analyze GCS buckets and identify those with low utilization.
     
-    Args:
+   Args:
         project_id (str): GCP project ID
         credentials_path (str): Path to service account credentials
         bucket_quota_gb (int): Bucket quota in GB for utilization calculation
+        thresholds (dict): A dictionary containing the thresholds from MongoDB.
     """
+
+    bucket_threshold = thresholds.get('storage_utilization', 20.0)
+
     print(f"\n📦 Analyzing Storage Buckets (Quota: {bucket_quota_gb}GB)")
     print("=" * 60)
     
@@ -497,7 +552,7 @@ def categorize_gcp_resources(project_id, credentials_path, bucket_quota_gb=100):
                 
                 storage.append((resource.asset_type, resource.name, utilization, total_bytes))
                 
-                if utilization is not None and utilization < 20.0:
+                if utilization is not None and utilization < bucket_threshold:
                     low_util_storage.append((resource.asset_type, resource.name, utilization, total_bytes))
         
         # Display results
@@ -523,7 +578,7 @@ def categorize_gcp_resources(project_id, credentials_path, bucket_quota_gb=100):
         if not storage:
             print("  • No buckets found")
         
-        print(f"\n🔍 Low Utilization Buckets (<20%): {len(low_util_storage)}")
+        print(f"\n🔍 Low Utilization Buckets (<{bucket_threshold}%): {len(low_util_storage)}")
         if low_util_storage:
             for asset_type, name, util, size in low_util_storage:
                 util_str = f"{util:.8f}%" if util is not None else "N/A"
@@ -548,18 +603,21 @@ def categorize_gcp_resources(project_id, credentials_path, bucket_quota_gb=100):
     except Exception as e:
         print(f"❌ Error analyzing buckets: {e}")
 
-def categorize_gcp_vm_cpu_utilization(project_id, credentials_path, threshold=15.0):
+def categorize_gcp_vm_cpu_utilization(project_id, credentials_path, thresholds):
     """
     Analyze VM instances and identify those with low CPU utilization.
     
-    Args:
+       Args:
         project_id (str): GCP project ID
         credentials_path (str): Path to service account credentials
-        threshold (float): CPU utilization threshold percentage
+        thresholds (dict): A dictionary containing the thresholds from MongoDB.
+
     """
+    threshold = thresholds.get('cmp_cpu_usage', 15.0)
     print(f"\n💻 Analyzing VM Instances (CPU Threshold: {threshold}%)")
     print("=" * 60)
-    
+
+
     credentials = service_account.Credentials.from_service_account_file(credentials_path)
     client = asset_v1.AssetServiceClient(credentials=credentials)
     scope = f"projects/{project_id}"
@@ -596,6 +654,9 @@ def categorize_gcp_vm_cpu_utilization(project_id, credentials_path, threshold=15
                     })
         
         print(f"\nTotal VMs analyzed: {total_vms}")
+
+
+
         print(f"🔍 Low CPU Usage VMs (<{threshold}%): {len(low_cpu_vms)}")
         
         if low_cpu_vms:
@@ -607,14 +668,18 @@ def categorize_gcp_vm_cpu_utilization(project_id, credentials_path, threshold=15
     except Exception as e:
         print(f"❌ Error analyzing VMs: {e}")
 
-def list_subnets_with_cidr_and_ip_usage(project_id):
+def list_subnets_with_cidr_and_ip_usage(project_id, thresholds):
     """
     Analyze subnets and identify those with high free IP addresses.
     
     Args:
-        project_id (str): GCP project ID
+        project_id (str): GCP project ID    subnet_threshold = thresholds.get('subnet_free_ip_percentage', 90.0)
+
     """
-    print(f"\n🌐 Analyzing Subnets (Free IP Threshold: >90%)")
+
+    subnet_threshold = thresholds.get('subnet_free_ip_percentage', 90.0)
+    print(f"\n🌐 Analyzing Subnets (Free IP Threshold: >{subnet_threshold}%)")
+
     print("=" * 60)
     
     high_free_subnets = []
@@ -644,13 +709,14 @@ def list_subnets_with_cidr_and_ip_usage(project_id):
                     
                     print(f"  • {name} (VPC: {vpc_name}) - {free_pct:.8f}% free IPs ({free_ips}/{total_ips})")
                     
-                    if free_pct > 90:
+                    if free_pct > subnet_threshold:
                         high_free_subnets.append((name, vpc_name, cidr, total_ips, used_ips_count, free_ips, free_pct))
             
             request = compute.subnetworks().aggregatedList_next(previous_request=request, previous_response=response)
         
         print(f"\nTotal subnets analyzed: {total_subnets}")
-        print(f"🔍 High Free IP Subnets (>90%): {len(high_free_subnets)}")
+        print(f"🔍 High Free IP Subnets (>{subnet_threshold}%): {len(high_free_subnets)}")
+
         
         if high_free_subnets:
             for name, vpc_name, cidr, total_ips, used_ips_count, free_ips, free_pct in high_free_subnets:
@@ -661,18 +727,20 @@ def list_subnets_with_cidr_and_ip_usage(project_id):
     except Exception as e:
         print(f"❌ Error analyzing subnets: {e}")
 
-def categorize_gcp_disk_utilization(project_id, credentials_path, disk_quota_gb=100):
+def categorize_gcp_disk_utilization(project_id, credentials_path, thresholds):
     """
     Analyze persistent disks and identify those with low utilization based on allocated size.
     Since actual disk usage metrics aren't available via basic Compute API, we identify
     potentially underutilized disks based on small size or specific criteria.
     Uses aggregated list API for maximum speed across all zones.
     
-    Args:
+   Args:
         project_id (str): GCP project ID
         credentials_path (str): Path to service account credentials
-        disk_quota_gb (int): Size threshold in GB for identifying small disks
+        thresholds (dict): A dictionary containing the thresholds from MongoDB.
     """
+    disk_quota_gb = thresholds.get('disk_underutilized_gb', 100)
+
     print(f"\n💿 Analyzing Persistent Disks (Small Disk Threshold: <{disk_quota_gb}GB)")
     print("=" * 60)
     print("📋 Identifying potentially underutilized disks based on size and status")
@@ -773,13 +841,19 @@ def categorize_gcp_disk_utilization(project_id, credentials_path, disk_quota_gb=
 # JSON REPORT GENERATION
 # ================================================================================
 
-def collect_optimization_candidates():
+def collect_optimization_candidates(thresholds):
     """
     Collect detailed information about resources that meet optimization criteria.
     
     Returns:
         dict: Dictionary containing optimization candidates with IDs, names, and labels
     """
+
+    bucket_threshold = thresholds.get('storage_utilization', 20.0)
+    vm_cpu_threshold = thresholds.get('cmp_cpu_usage', 15.0)
+    subnet_threshold = thresholds.get('subnet_free_ip_percentage', 90.0)
+    disk_quota_gb = thresholds.get('disk_underutilized_gb', 100)  # Use this instead of the global DISK_QUOTA_GB
+
     print(f"\n📊 Collecting Optimization Candidates for JSON Report...")
     print("=" * 60)
     
@@ -796,7 +870,7 @@ def collect_optimization_candidates():
     scope = f"projects/{PROJECT_ID}"
     bucket_quota_gb = 100
     bucket_quota_bytes = bucket_quota_gb * 1_000_000_000
-    disk_quota_bytes = DISK_QUOTA_GB * 1_000_000_000
+   # disk_quota_bytes = DISK_QUOTA_GB * 1_000_000_000
     
     # Collect low utilization buckets (<20% of quota)
     try:
@@ -816,7 +890,7 @@ def collect_optimization_candidates():
                 
                 if total_bytes is not None:
                     utilization = min((total_bytes / bucket_quota_bytes) * 100, 100.0)
-                    if utilization < 20.0:
+                    if utilization < bucket_threshold:
                         # Get cost data for bucket
                         cost_data = get_detailed_resource_costs(
                             PROJECT_ID, 
@@ -852,6 +926,7 @@ def collect_optimization_candidates():
                         
                         # Update metadata with specific recommendation
                         metadata["Recommendation"] = "Try Merging"
+
                         
                         optimization_candidates["low_utilization_buckets"].append({
                             "name": bucket_name,
@@ -882,17 +957,29 @@ def collect_optimization_candidates():
         for resource in response:
             if resource.asset_type == 'compute.googleapis.com/Instance':
                 cpu_util = get_average_utilization(PROJECT_ID, resource.asset_type, resource.name, credentials)
-                if cpu_util is not None and cpu_util < 15.0:
+                if cpu_util is not None and cpu_util < vm_cpu_threshold:
                     vm_id = resource.name.split("/")[-1]
                     zone = None
                     if 'zones/' in resource.name:
                         zone = resource.name.split("/zones/")[-1].split("/")[0]
-                    
+
+                    machine_type = 'e2-micro'  # Default value
+                    if zone and vm_id:
+                        try:
+                            # Get full details of the instance to find its machine type
+                            instance_details = compute.instances().get(project=PROJECT_ID, zone=zone,
+                                                                       instance=vm_id).execute()
+                            machine_type_full_url = instance_details.get('machineType', '')
+                            if machine_type_full_url:
+                                machine_type = machine_type_full_url.split('/')[-1]
+                        except Exception as e:
+                            print(f"    ⚠️ Could not fetch details for VM {vm_id}: {e}")
+
                     # Get cost data for VM (estimate based on standard machine types)
                     cost_data = get_detailed_resource_costs(
                         PROJECT_ID, 
                         'vm', 
-                        {'machine_type': 'e2-micro'}  # Default assumption for cost estimation
+                        {'machine_type': machine_type}  # Default assumption for cost estimation
                     )
                     
                     # Extract labels and create structured metadata
@@ -913,7 +1000,7 @@ def collect_optimization_candidates():
                     
                     # Update metadata with specific recommendation
                     metadata["Recommendation"] = "Scale Down"
-                    
+                    metadata['InstanceType'] = machine_type
                     optimization_candidates["low_cpu_vms"].append({
                         "name": vm_id,
                         "full_name": resource.name,
@@ -949,7 +1036,7 @@ def collect_optimization_candidates():
                     free_ips = total_ips - used_ips_count
                     free_pct = (free_ips / total_ips * 100) if total_ips > 0 else 0
                     
-                    if free_pct > 90:
+                    if free_pct > subnet_threshold:
                         # Get cost data for subnet
                         cost_data = get_detailed_resource_costs(
                             PROJECT_ID, 
@@ -1024,9 +1111,9 @@ def collect_optimization_candidates():
                         # 1. Small (< threshold GB) OR
                         # 2. Not attached to any instance OR  
                         # 3. Status is not READY
-                        if size_gb < DISK_QUOTA_GB or not is_attached or status != 'READY':
+                        if size_gb < disk_quota_gb or not is_attached or status != 'READY':
                             reasons = []
-                            if size_gb < DISK_QUOTA_GB:
+                            if size_gb < disk_quota_gb:
                                 reasons.append(f"small_size")
                             if not is_attached:
                                 reasons.append("unattached")
@@ -1092,7 +1179,7 @@ def collect_optimization_candidates():
     
     return optimization_candidates
 
-def save_optimization_report():
+def save_optimization_report(thresholds):
     """
     Generate and save MongoDB-ready resource records as JSON array.
     """
@@ -1100,7 +1187,8 @@ def save_optimization_report():
     print("=" * 60)
     
     # Collect optimization candidates
-    candidates = collect_optimization_candidates()
+    candidates = collect_optimization_candidates(thresholds)
+
     
     # Create flat array of resource metadata for MongoDB
     mongodb_records = []
@@ -1191,14 +1279,14 @@ def insert_to_mongodb(records):
         }
         existing_count = collection.count_documents(filter_query)
         if existing_count > 0:
-            collection.delete_many({})
+            collection.delete_many(filter_query)
             print(f"🗑️  Cleared {existing_count} existing records from optimization collection")
         else:
             print("📝 Collection is empty, no records to clear")
         
-        # Add timestamp to each record
+        # Add timestamp to each record¯
         for record in records:
-            record['InsertedAt'] = datetime.now(utc).isoformat()
+            record['InsertedAt'] = datetime.now(UTC).isoformat()
         
         # Insert all records
         result = collection.insert_many(records)
@@ -1322,7 +1410,7 @@ def extract_resource_metadata(labels, resource_name, resource_type, region=None,
     
     return {
         "_id": full_name or f"//cloudresourcemanager.googleapis.com/projects/{PROJECT_ID}/resources/{resource_name}",
-        "CloudProvider": "gcp",
+        "CloudProvider": "GCP",
         "ManagementUnitId": PROJECT_ID,
         "ApplicationCode": get_label_value("applicationcode"),
         "CostCenter": get_label_value("costcenter"),
@@ -1338,7 +1426,7 @@ def extract_resource_metadata(labels, resource_name, resource_type, region=None,
         "Finding": finding,
         "Recommendation": recommendation,
         "Environment": get_label_value("environment"),
-        "Timestamp": datetime.now(utc).isoformat().replace('+00:00', 'Z'),
+        "Timestamp": datetime.now(UTC).isoformat().replace('+00:00', 'Z'),
         "ConfidenceScore": "NA",
         "Status": resource_status,
         "Entity": get_label_value("entity"),
@@ -1358,18 +1446,21 @@ if __name__ == "__main__":
     print(f"Analysis Date: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print(f"Disk Analysis: Enabled")
     print("=" * 80)
-    
+
+    # Fetch dynamic thresholds from MongoDB
+    thresholds = get_thresholds_from_mongodb(USER_EMAIL, collection_name="standardConfigsDb")
+
     try:
         # Run comprehensive resource analysis
-        categorize_gcp_resources(PROJECT_ID, CREDENTIALS_PATH, bucket_quota_gb=100)
-        categorize_gcp_vm_cpu_utilization(PROJECT_ID, CREDENTIALS_PATH, threshold=15.0)
-        list_subnets_with_cidr_and_ip_usage(PROJECT_ID)
-        
+        categorize_gcp_resources(PROJECT_ID, CREDENTIALS_PATH, bucket_quota_gb=100, thresholds=thresholds)
+        categorize_gcp_vm_cpu_utilization(PROJECT_ID, CREDENTIALS_PATH, thresholds=thresholds)
+        list_subnets_with_cidr_and_ip_usage(PROJECT_ID, thresholds=thresholds)
+
         # Run disk analysis
-        categorize_gcp_disk_utilization(PROJECT_ID, CREDENTIALS_PATH, disk_quota_gb=DISK_QUOTA_GB)
+        categorize_gcp_disk_utilization(PROJECT_ID, CREDENTIALS_PATH, thresholds=thresholds)
         
         # Generate and save detailed JSON report
-        save_optimization_report()
+        save_optimization_report(thresholds) # Pass thresholds here too
         
         # Insert records to MongoDB if available
         try:
