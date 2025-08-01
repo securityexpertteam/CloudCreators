@@ -26,18 +26,18 @@ const CONFIG_TYPES = [
     key: "cloud_storage",
     label: "Cloud Storage",
     fields: [
-      { name: "storage_size", label: "Total Storage Size (GB/TB)", type: "number" },
-      { name: "access_frequency", label: "Access Frequency", type: "dropdown", options: ["Hot", "Cold"] },
-      { name: "network_egress", label: "Network Egress (GB)", type: "number" },
-      { name: "lifecycle_enabled", label: "Lifecycle Policies Enabled?", type: "checkbox" },
+      { name: "stor_size", label: "Total Storage Size (GB/TB)", type: "number" },
+      { name: "stor_access_frequency", label: "Access Frequency", type: "dropdown", options: ["Hot", "Cold"] },
+      { name: "stor_nw_egress", label: "Network Egress (GB)", type: "number" },
+      { name: "stor_lifecycle_enabled", label: "Lifecycle Policies Enabled?", type: "checkbox" },
     ],
   },
   {
     key: "general",
     label: "General Configuration",
     fields: [
-      { name: "untagged", label: "Include Untagged Resources", type: "checkbox" },
-      { name: "orphaned", label: "Include Orphaned Resources", type: "checkbox" },
+      { name: "gen_untagged", label: "Include Untagged Resources", type: "checkbox" },
+      { name: "gen_orphaned", label: "Include Orphaned Resources", type: "checkbox" },
     ],
   },
 ];

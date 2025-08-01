@@ -39,10 +39,14 @@ function Dashboard() {
   const [showFilter, setShowFilter] = useState(false);
   const [loading, setLoading] = useState(true);
   const [lastUpdated, setLastUpdated] = useState(null);
+  const [costCenterSummary, setCostCenterSummary] = useState([]);
+  const [applicationCodeSummary, setApplicationCodeSummary] = useState([]);
+
+ const user = JSON.parse(localStorage.getItem("user") || "{}");
 
   useEffect(() => {
     setLoading(true);
-    axios.get("http://localhost:8000/api/resources")
+    axios.get(`http://localhost:8000/api/resources?email=${user.email}`)
       .then((res) => {
         // Sort resources by TotalCost descending for table
         const sortedResources = [...res.data].sort((a, b) => (parseFloat(b.TotalCost) || 0) - (parseFloat(a.TotalCost) || 0));
@@ -116,6 +120,28 @@ function Dashboard() {
           .sort((a, b) => b.cost - a.cost);
         setEnvironmentSummary(environmentSummaryArray);
 
+        // Aggregate cost by Cost Center
+        const costCenterSummary = res.data.reduce((acc, curr) => {
+          if (!curr.CostCenter || !curr.TotalCost) return acc;
+          acc[curr.CostCenter] = (acc[curr.CostCenter] || 0) + Number(curr.TotalCost);
+          return acc;
+        }, {});
+        const costCenterSummaryArray = Object.entries(costCenterSummary)
+          .map(([costCenter, cost]) => ({ costCenter, cost: cost }))
+          .sort((a, b) => b.cost - a.cost);
+        setCostCenterSummary(costCenterSummaryArray);
+
+        // Aggregate cost by Application Code
+        const applicationCodeSummary = res.data.reduce((acc, curr) => {
+          if (!curr.ApplicationCode || !curr.TotalCost) return acc;
+          acc[curr.ApplicationCode] = (acc[curr.ApplicationCode] || 0) + Number(curr.TotalCost);
+          return acc;
+        }, {});
+        const applicationCodeSummaryArray = Object.entries(applicationCodeSummary)
+          .map(([appCode, cost]) => ({ applicationCode: appCode, cost: cost }))
+          .sort((a, b) => b.cost - a.cost);
+        setApplicationCodeSummary(applicationCodeSummaryArray);
+
         setLoading(false);
         setLastUpdated(new Date());
       })
@@ -132,13 +158,30 @@ function Dashboard() {
   const applyFilter = () => {
     const filtered = resources.filter((item) => {
       return (
+        (filters.CloudProvider === "" || item.CloudProvider === filters.CloudProvider) &&
+        (filters.Entity === "" || item.Entity === filters.Entity) &&
         (filters.CIO === "" || item.CIO === filters.CIO) &&
         (filters.ResourceType === "" || item.ResourceType === filters.ResourceType) &&
         (filters.Region === "" || item.Region === filters.Region) &&
         (filters.TotalCost === "" || item.TotalCost <= parseFloat(filters.TotalCost))
       );
     });
-    // Sort filtered by TotalCost descending
+
+    // Update summaries based on filtered resources
+    const updatedCloudProviderSummary = filtered.reduce((acc, curr) => {
+      if (!curr.CloudProvider || !curr.TotalCost) return acc;
+      acc[curr.CloudProvider] = (acc[curr.CloudProvider] || 0) + Number(curr.TotalCost);
+      return acc;
+    }, {});
+    setCloudProviderSummary(Object.entries(updatedCloudProviderSummary).map(([provider, cost]) => ({ provider, cost })));
+
+    const updatedEntitySummary = filtered.reduce((acc, curr) => {
+      if (!curr.Entity || !curr.TotalCost) return acc;
+      acc[curr.Entity] = (acc[curr.Entity] || 0) + Number(curr.TotalCost);
+      return acc;
+    }, {});
+    setEntityCostSummary(Object.entries(updatedEntitySummary).map(([entity, cost]) => ({ entity, cost })));
+
     setFilteredResources(filtered.sort((a, b) => (parseFloat(b.TotalCost) || 0) - (parseFloat(a.TotalCost) || 0)));
   };
 
@@ -148,8 +191,27 @@ function Dashboard() {
       ResourceType: "",
       Region: "",
       TotalCost: "",
+      CloudProvider: "",
+      Entity: "",
     });
     setFilteredResources(resources);
+
+    // Reset summaries to original state
+    const originalCloudProviderSummary = resources.reduce((acc, curr) => {
+      if (!curr.CloudProvider || !curr.TotalCost) return acc;
+      acc[curr.CloudProvider] = (acc[curr.CloudProvider] || 0) + Number(curr.TotalCost);
+      return acc;
+    }, {});
+    setCloudProviderSummary(Object.entries(originalCloudProviderSummary).map(([provider, cost]) => ({ provider, cost })));
+
+    const originalEntitySummary = resources.reduce((acc, curr) => {
+      if (!curr.Entity || !curr.TotalCost) return acc;
+      acc[curr.Entity] = (acc[curr.Entity] || 0) + Number(curr.TotalCost);
+      return acc;
+    }, {});
+    setEntityCostSummary(Object.entries(originalEntitySummary).map(([entity, cost]) => ({ entity, cost })));
+
+    // Add similar resets for other summaries if needed
   };
 
   // Card summary data
@@ -163,6 +225,38 @@ function Dashboard() {
   const palette = [
     '#4287f5', '#f59e42', '#42f5b3', '#f542a7', '#a742f5', '#f5e642', '#42f5e6', '#f54242', '#7a42f5', '#42f57b'
   ];
+
+  const downloadCSV = () => {
+    const csvContent = [
+      ["Entity", "Cloud Provider", "Environment", "CIO", "Resource Name", "Resource Type", "Region", "Total Cost", "Owner", "Current Size", "Finding", "Recommendation", "Status"],
+      ...filteredResources.map(r => [
+        r.Entity,
+        r.CloudProvider,
+        r.Environment,
+        r.CIO,
+        r.ResourceName,
+        r.ResourceType,
+        r.Region,
+        r.TotalCost,
+        r.Owner,
+        r.Current_Size,
+        r.Finding,
+        r.Recommendation,
+        r.Status
+      ])
+    ]
+      .map(e => e.join(","))
+      .join("\n");
+
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    link.download = "filtered_data.csv";
+    link.style.display = "none";
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
 
   return (
     <div className="App finops-dashboard glassy-bg" style={{
@@ -359,6 +453,28 @@ function Dashboard() {
           backdropFilter: 'blur(8px)',
           WebkitBackdropFilter: 'blur(8px)',
         }}>
+          <select
+            name="CloudProvider"
+            value={filters.CloudProvider}
+            onChange={handleInputChange}
+            style={{padding: 8, borderRadius: 6, border: '1px solid #ccc', minWidth: 120}}
+          >
+            <option value="">Select Cloud Provider</option>
+            {cloudProviderSummary.map((provider) => (
+              <option key={provider.provider} value={provider.provider}>{provider.provider}</option>
+            ))}
+          </select>
+          <select
+            name="Entity"
+            value={filters.Entity}
+            onChange={handleInputChange}
+            style={{padding: 8, borderRadius: 6, border: '1px solid #ccc', minWidth: 120}}
+          >
+            <option value="">Select Entity</option>
+            {entityCostSummary.map((entity) => (
+              <option key={entity.entity} value={entity.entity}>{entity.entity}</option>
+            ))}
+          </select>
           <input
             type="text"
             name="CIO"
@@ -590,6 +706,68 @@ function Dashboard() {
                 }}
               />
             </div>
+
+            {/* Cost Center-wise Bar Chart */}
+            <div style={{background: '#fff', borderRadius: 16, boxShadow: '0 4px 16px #e0e0e0', padding: 24, minWidth: 350, maxWidth: 500, height: 300, display: 'flex', flexDirection: 'column', justifyContent: 'center'}}>
+              <h3 style={{textAlign: 'center', marginBottom: 16, color: '#222'}}>Cost Center-wise Total Cost</h3>
+              <Bar
+                data={{
+                  labels: costCenterSummary.map((c) => c.costCenter),
+                  datasets: [
+                    {
+                      label: "Total Cost (USD)",
+                      data: costCenterSummary.map((c) => c.cost),
+                      backgroundColor: palette,
+                    },
+                  ],
+                }}
+                options={{
+                  plugins: {
+                    legend: { display: false },
+                    tooltip: { enabled: true },
+                    title: { display: false }
+                  },
+                  responsive: true,
+                  maintainAspectRatio: false,
+                  scales: {
+                    y: { beginAtZero: true, grid: { display: false } },
+                    x: { grid: { display: false } }
+                  },
+                  layout: { padding: 10 },
+                }}
+              />
+            </div>
+
+            {/* Application Code-wise Bar Chart */}
+            <div style={{background: '#fff', borderRadius: 16, boxShadow: '0 4px 16px #e0e0e0', padding: 24, minWidth: 350, maxWidth: 500, height: 300, display: 'flex', flexDirection: 'column', justifyContent: 'center'}}>
+              <h3 style={{textAlign: 'center', marginBottom: 16, color: '#222'}}>Application Code-wise Total Cost</h3>
+              <Bar
+                data={{
+                  labels: applicationCodeSummary.map((a) => a.applicationCode),
+                  datasets: [
+                    {
+                      label: "Total Cost (USD)",
+                      data: applicationCodeSummary.map((a) => a.cost),
+                      backgroundColor: palette,
+                    },
+                  ],
+                }}
+                options={{
+                  plugins: {
+                    legend: { display: false },
+                    tooltip: { enabled: true },
+                    title: { display: false }
+                  },
+                  responsive: true,
+                  maintainAspectRatio: false,
+                  scales: {
+                    y: { beginAtZero: true, grid: { display: false } },
+                    x: { grid: { display: false } }
+                  },
+                  layout: { padding: 10 },
+                }}
+              />
+            </div>
           </div>
 
           {/* Resource Table */}
@@ -667,6 +845,27 @@ function Dashboard() {
                 ))}
               </tbody>
             </table>
+          </div>
+
+          {/* Download CSV Button */}
+          <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 20 }}>
+            <button
+              onClick={downloadCSV}
+              style={{
+                background: '#4287f5',
+                color: '#fff',
+                border: 'none',
+                borderRadius: 8,
+                padding: '10px 20px',
+                fontWeight: 600,
+                fontSize: 15,
+                cursor: 'pointer',
+                boxShadow: '0 2px 8px rgba(0, 0, 0, 0.2)',
+                transition: 'all 0.2s',
+              }}
+            >
+              Download CSV
+            </button>
           </div>
         </>
       )}

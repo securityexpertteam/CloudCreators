@@ -8,15 +8,15 @@ class User(BaseModel):
     environment: str
     rootId: str
     managementUnitId: str
-    srvaccntName: str
-    srvacctPass: str
-    email: str = None
-    gcpJsonFile: Optional[str] = None  # <-- Add this field
+    vaultname: str
+    secretname: str
+    clientId: str
+    clientsecret: str
+    email: Optional[str] = None  # <-- Add this field
 
 class Trigger(BaseModel):
     email: str
     ScheduledTimeStamp: datetime
-    ScanCompletedTime: Optional[datetime] = None
 
 
 class BulkSignupRequest(BaseModel):
@@ -93,14 +93,14 @@ class StandardConfig(BaseModel):
     k8s_volume_percentage: Optional[int] = None
 
     # Cloud Storage
-    storage_size: Optional[int] = None
-    access_frequency: Optional[str] = None
-    network_egress: Optional[int] = None
-    lifecycle_enabled: Optional[bool] = None
+    stor_size: Optional[int] = None
+    stor_access_frequency: Optional[str] = None
+    stor_nw_egress: Optional[int] = None
+    stor_lifecycle_enabled: Optional[bool] = None
 
     # General
-    untagged: Optional[bool] = None
-    orphaned: Optional[bool] = None
+    gen_untagged: Optional[bool] = None
+    gen_orphaned: Optional[bool] = None
 
 class SigninUser(BaseModel):
     email: str

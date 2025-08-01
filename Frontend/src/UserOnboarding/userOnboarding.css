@@ -154,3 +154,17 @@ h3 {
   font-weight: 600;
   letter-spacing: 0.5px;
 }
+
+.delete-btn {
+  background-color: #dc3545;
+  color: white;
+  border: none;
+  padding: 6px 10px;
+  margin-left: 5px;
+  cursor: pointer;
+  border-radius: 4px;
+}
+
+.delete-btn:hover {
+  background-color: #c82333;
+}
