@@ -26,18 +26,9 @@ standard_config_collection = db["standardConfigsDb"]
 # Get storage_size value from standardConfigsDb collection
 storage_config = standard_config_collection.find_one({}, {"storage_size": 1, "_id": 0})
 sc_stor_size_in_gb = storage_config.get("storage_size") if storage_config else 1  # Default to 1 if not found
-
-# Fetch VM thresholds from standardConfigsDb collection
-vm_config = standard_config_collection.find_one({}, {
-    "cmp_cpu_usage": 1,
-    "cmp_memory_usage": 1,
-    "cmp_network_usage": 1,
-    "_id": 0
-})
-
-VM_UNDERUTILIZED_CPU_THRESHOLD = vm_config.get("cmp_cpu_usage", 15) if vm_config else 15
-VM_UNDERUTILIZED_MEMORY_THRESHOLD = vm_config.get("cmp_memory_usage", 30) if vm_config else 30
-VM_UNDERUTILIZED_NETWORK_THRESHOLD = vm_config.get("cmp_network_usage", 40) if vm_config else 40
+VM_UNDERUTILIZED_CPU_THRESHOLD = 15
+VM_UNDERUTILIZED_MEMORY_THRESHOLD = 30
+VM_UNDERUTILIZED_NETWORK_THRESHOLD = 40
 VM_UNDERUTILIZED_TOTAL_AVG_THRESHOLD = 30
 SUBNET_FREE_IP_THRESHOLD = 90  # percent
 DISK_QUOTA_GB = int(os.getenv("DISK_QUOTA_GB", 100))  # Default to 100GB if not set
@@ -203,7 +194,7 @@ def analyze_azure_resources():
     network_client = NetworkManagementClient(credential, subscription_id)
 
     end_date = datetime.datetime.utcnow()
-    start_date = end_date - datetime.timedelta(days=30)
+    start_date = end_date - datetime.timedelta(days=7)
 
     cost_query = {
         "type": "Usage",
@@ -292,7 +283,7 @@ def analyze_azure_resources():
             "Feature":tags.get("Feature", "na").lower(),
             "Owner": tags.get("Owner", "na").lower(),
             "TicketId": tags.get("Ticket", "na").lower(),
-            "ResourceType": resource_type_value,
+            "ResourceType": resource_type_value.capitalize(),
             "SubResourceType": sub_resource_type.lower(),
             "ResourceName": resource.name,
             "Region": resource.location if resource.location else "na",
@@ -384,8 +375,8 @@ def analyze_azure_resources():
                 formatted_resource["Current_Disk_Size_GB"] = disk_size_gb
                 formatted_resource["Disk_Status"] = disk_status
                 formatted_resource["Disk_Attached"] = attached
-                formatted_resource["Finding"] = "Disk underutilised"
-                formatted_resource["Recommendation"] = "Scale Down"
+                formatted_resource["Finding"] = ", ".join(findings)
+                formatted_resource["Recommendation"] = ", ".join(recommendations)
                 underutilized_storage_accounts.append(formatted_resource)
                 print(f"[UNDERUTILIZED] Disk: {resource.name} - Size: {disk_size_gb}GB, Status: {disk_status}, Attached: {attached}")
             continue
@@ -415,8 +406,6 @@ def analyze_azure_resources():
             print(f"  • {subnet.name} (VNet: {vnet.name}) - {free_percent:.2f}% free IPs")
             if free_percent > SUBNET_FREE_IP_THRESHOLD:
                 # Build formatted_resource for subnet using the same structure as storage accounts
-                subnet_normalized_id = normalize_resource_id(subnet.id)
-                total_cost = resource_cost_map.get(subnet_normalized_id, 0)
                 formatted_resource = {
                     "_id": subnet.id,
                     "CloudProvider": "Azure",
@@ -433,7 +422,7 @@ def analyze_azure_resources():
                     "SubResourceType": "subnet",
                     "ResourceName": subnet.name,
                     "Region": vnet.location if vnet.location else "na",
-                    "TotalCost": total_cost,
+                    "TotalCost": 0,
                     "Currency": tags.get("Currency", "usd").upper(),
                     "Finding": "subnet underutilised",
                     "Recommendation": "scale down",
