@@ -261,8 +261,8 @@ const UserOnboarding = () => {
               <th>Environment</th>
               <th>RootId</th>
               <th>MgmtUnitId</th>
-              <th>Vault</th>
-              <th>Secret</th>
+              <th>Vault Name</th>
+              <th>Secret Name</th>
               <th>Delete</th>
             </tr>
           </thead>
