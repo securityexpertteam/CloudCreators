@@ -8,6 +8,7 @@ from cryptography.fernet import Fernet
 import bcrypt
 from bson import ObjectId
 
+print(Fernet.generate_key().decode())
 
 import os
 import base64
@@ -120,9 +121,6 @@ async def environment_onboarding(request: Request):
     inserted_users = []
 
     for user in users:
-    
-
-        # 2. Check for duplicates
         existing = usersEnvironmentOnboarding_collection.find_one({
             "cloudName": user["cloudName"],
             "environment": user["environment"],
@@ -132,11 +130,17 @@ async def environment_onboarding(request: Request):
         if existing:
             continue
 
-        # 3. Directly save the password without bcrypt
         user_dict = dict(user)
         user_dict["email"] = email
-        # Password is stored as plain text here
-       
+
+        fernet = Fernet(os.environ["FERNET_SECRET_KEY"])
+
+        # Encrypt both srvacctPass and srvaccntName
+        encrypted_pass = fernet.encrypt(user["srvacctPass"].encode()).decode()
+        encrypted_client_id = fernet.encrypt(user["srvaccntName"].encode()).decode()
+
+        user_dict["srvacctPass"] = encrypted_pass
+        user_dict["srvaccntName"] = encrypted_client_id  # store encrypted name
 
         result = usersEnvironmentOnboarding_collection.insert_one(user_dict)
         user_dict["_id"] = str(result.inserted_id)
@@ -212,3 +216,14 @@ def get_last_scan(email: str):
         
         
     }
+    
+@router.get("/triggers/latest")
+async def get_latest_trigger(email: str):
+    latest = triggers_collection.find_one(
+        {"email": email},
+        sort=[("SystemTimeStamp", -1)]
+    )
+    if latest:
+        latest["_id"] = str(latest["_id"])
+    return latest
+   

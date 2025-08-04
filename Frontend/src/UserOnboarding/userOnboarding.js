@@ -18,14 +18,14 @@ const UserOnboarding = () => {
     managementUnitId: "",
     vaultname: "",
     secretname: "",
-    clientId: "",
-    clientsecret: ""
+    srvaccntName: "",
+    srvacctPass: ""
   });
 
   const [usersList, setUsersList] = useState([]);
 
   const handleAddUser = () => {
-    const requiredFields = ["cloudName", "environment", "rootId", "managementUnitId", "vaultname", "secretname", "clientId", "clientsecret"];
+    const requiredFields = ["cloudName", "environment", "rootId", "managementUnitId", "vaultname", "secretname", "srvaccntName", "srvacctPass"];
     for (let field of requiredFields) {
       if (!user[field]) {
         alert(`Please fill the ${field} field`);
@@ -41,8 +41,8 @@ const UserOnboarding = () => {
       managementUnitId: "",
       vaultname: "",
       secretname: "",
-      clientId: "",
-      clientsecret: ""
+      srvaccntName: "",
+      srvacctPass: ""
     });
   };
 
@@ -56,6 +56,8 @@ const UserOnboarding = () => {
   };
 
   const handleSubmit = async () => {
+
+
     const payload = {
       users: usersList,
       email: email,
@@ -189,22 +191,22 @@ const UserOnboarding = () => {
         </div>
 
         <div className="input-group">
-          <label>Client ID</label>
+          <label>Client ID -svc name</label>
           <input
             type="text"
             placeholder="Enter Client ID"
-            value={user.clientId}
-            onChange={(e) => setUser({ ...user, clientId: e.target.value })}
+            value={user.srvaccntName}
+            onChange={(e) => setUser({ ...user, srvaccntName: e.target.value })}
           />
         </div>
 
         <div className="input-group">
-          <label>Client Secret</label>
+          <label>Client Secret-svcpass</label>
           <input
             type="password"
             placeholder="Enter Client Secret"
-            value={user.clientsecret}
-            onChange={(e) => setUser({ ...user, clientsecret: e.target.value })}
+            value={user.srvacctPass}
+            onChange={(e) => setUser({ ...user, srvacctPass: e.target.value })}
           />
         </div>
 
@@ -224,8 +226,8 @@ const UserOnboarding = () => {
                 <th>MgmtUnitId</th>
                 <th>Vault</th>
                 <th>Secret</th>
-                <th>ClientId</th>
-                <th>ClientSecret</th>
+                <th>ClientId-svcName</th>
+                <th>ClientSecret-svc-password</th>
                 <th>Actions</th>
               </tr>
             </thead>
@@ -238,8 +240,8 @@ const UserOnboarding = () => {
                   <td>{u.managementUnitId}</td>
                   <td>{u.vaultname}</td>
                   <td>{u.secretname}</td>
-                  <td>{u.clientId}</td>
-                  <td>{"*".repeat(u.clientsecret.length)}</td>
+                  <td>{u.srvaccntName}</td>
+                  <td>{"*".repeat(u.srvacctPass.length)}</td>
                   <td>
                     <button className="edit-btn" onClick={() => handleEditUser(idx)}>Edit</button>
                     <button className="delete-btn" onClick={() => handleDeleteUser(idx)}>Delete</button>

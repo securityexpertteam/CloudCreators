@@ -10,8 +10,8 @@ class User(BaseModel):
     managementUnitId: str
     vaultname: str
     secretname: str
-    clientId: str
-    clientsecret: str
+    srvaccntName: str
+    srvacctPass: str
     email: Optional[str] = None  # <-- Add this field
 
 class Trigger(BaseModel):
