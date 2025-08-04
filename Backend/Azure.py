@@ -13,7 +13,7 @@ from azure.mgmt.network import NetworkManagementClient
 from pymongo import MongoClient
 import os
 import ipaddress
-
+#Last Update by subhash
 # --- Argument Parser for Azure Credentials ---
 parser = argparse.ArgumentParser(description="Azure Resource Optimization Script")
 parser.add_argument("--client_id", required=True, help="Azure Client ID")
@@ -524,3 +524,4 @@ def analyze_azure_resources():
 
 if __name__ == "__main__":
     analyze_azure_resources()
+
