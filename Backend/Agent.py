@@ -103,8 +103,8 @@ try:
                             secret_name = Environment.get('secretname')
                             email_to_find = Environment.get('email')
                             username, password = fetch_credentials(mongo_uri, db_name, env_collection_name, email_to_find, cloud_name,managementUnit_Id,  vault_name, secret_name)
-                            #print(f"Username: {username}")
-                            #print(f"Password: {password}")
+                            print(f"Username: {username}")
+                            print(f"Password: {password}")
                             
                             if cloud_name == 'Azure':
 
@@ -121,7 +121,8 @@ try:
                                         "--email", email_to_find
                                     ]
                                 result = subprocess.run(cmd, capture_output=True, text=True)
-                                
+                                print(result.stdout)
+                                print(result.stderr)
                             elif cloud_name == 'GCP':
                                 print(f"   🟡 Running GCP script")
                                 cmd = [
