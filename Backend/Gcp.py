@@ -36,25 +36,41 @@ import json
 from google.cloud import asset_v1
 
 parser = argparse.ArgumentParser(description="GCP Resource Optimization Script")
-parser.add_argument("--client_id", required=True, help="GCP Client ID")
-parser.add_argument("--private_key", required=True, help="GCP Private Key")
-parser.add_argument("--org_id", required=True, help="GCP Organization ID")
-parser.add_argument("--project_id", required=True, help="GCP Project ID")
-parser.add_argument("--email", required=True, help="User Email for filtering configs")
+parser.add_argument("--client_email", required=True, help="GCP Service Account Client Email (for authentication)")
+parser.add_argument("--private_key", required=True, help="GCP Service Account Private Key. Replace newlines with '\\n'.")
+parser.add_argument("--project_id", required=True, help="GCP Project ID to analyze")
+parser.add_argument("--user_email", required=True, help="User Email for fetching configs from MongoDB and for reports")
 args = parser.parse_args()
 
+PROJECT_ID = args.project_id
+USER_EMAIL = args.user_email # Use the email from command line consistently
 
-client_id = args.client_id
-private_key = args.private_key
-org_id = args.org_id
-project_id = args.project_id
-user_email = args.email
+print("🚀 GCP Resource Optimization Analysis")
+print("=" * 80)
+print(f"Project to Analyze: {PROJECT_ID}")
+print(f"Configuration for User Email: {USER_EMAIL}")
+print(f"Authenticating with Service Account: {args.client_email}")
+print("=" * 80)
 
-print("Client ID:", args.client_id)
-print("private_key:", args.private_key)
-print("Organization ID:", args.org_id)
-print("Project ID:", args.project_id)
-print("Email:", args.email)
+try:
+    pk_string = args.private_key.replace('\\n', '\n')
+    credentials_info = {
+        "type": "service_account",
+        "project_id": PROJECT_ID,
+        "private_key": pk_string,
+        "client_email": args.client_email,
+        "token_uri": "https://oauth2.googleapis.com/token",
+    }
+    # Create a single, reusable credentials object from the arguments
+    gcp_credentials = service_account.Credentials.from_service_account_info(credentials_info)
+    print("✅ Authentication successful. Credentials object created.")
+
+except Exception as e:
+    print(f"❌ Critical Error: Failed to create credentials from arguments. Please check your inputs. Error: {e}")
+    exit(1) # Exit if authentication fails
+
+# Initialize the global compute client with the new credentials
+compute = discovery.build('compute', 'v1', credentials=gcp_credentials)
 
 # MongoDB integration
 try:
@@ -193,26 +209,19 @@ def get_email_from_environment_onboarding():
 #    PROJECT_ID = "dev-cl-homes-digital"  # Fallback to hardcoded value
 #    print(f"⚠️  Using fallback PROJECT_ID: {PROJECT_ID}")
 
-PROJECT_ID = args.project_id
+#PROJECT_ID = args.project_id
 
 # Get email from environmentOnboarding collection
 USER_EMAIL = get_email_from_environment_onboarding()
 
-script_dir = Path(__file__).resolve().parent
-
-# Build the path to the credentials file
-CREDENTIALS_PATH = script_dir / "Creds" / "dev-cl-homes-digital-d14d5f17ecba.json"
-
-with open(CREDENTIALS_PATH, 'r') as f:
-    credentials_info = json.load(f)
-print("✅ Authentication successful. Client is ready to use.")
+#script_dir = Path(__file__).resolve().parent
 
 # Analysis configuration
 #DISK_QUOTA_GB = 100  # Disk quota for utilization calculation
 
 # Initialize compute service for subnet and disk analysis
-credentials_compute = service_account.Credentials.from_service_account_file(CREDENTIALS_PATH)
-compute = discovery.build('compute', 'v1', credentials=credentials_compute)
+#credentials_compute = service_account.Credentials.from_service_account_file(CREDENTIALS_PATH)
+#compute = discovery.build('compute', 'v1', credentials=credentials_compute)
 
 # ================================================================================
 # UTILITY FUNCTIONS
@@ -533,7 +542,7 @@ def get_detailed_resource_costs(project_id, resource_type, resource_size=None, d
 # RESOURCE ANALYSIS FUNCTIONS
 # ================================================================================
 
-def categorize_gcp_resources(project_id, credentials_path, bucket_quota_gb, thresholds):
+def categorize_gcp_resources(project_id, credentials, bucket_quota_gb, thresholds):
     """
     Analyze GCS buckets and identify those with low utilization.
 
@@ -549,7 +558,7 @@ def categorize_gcp_resources(project_id, credentials_path, bucket_quota_gb, thre
     print(f"\n📦 Analyzing Storage Buckets (Quota: {bucket_quota_gb}GB)")
     print("=" * 60)
 
-    credentials = service_account.Credentials.from_service_account_file(credentials_path)
+    #credentials = service_account.Credentials.from_service_account_file(credentials_path)
     client = asset_v1.AssetServiceClient(credentials=credentials)
     scope = f"projects/{project_id}"
     bucket_quota_bytes = bucket_quota_gb * 1_000_000_000
@@ -629,7 +638,7 @@ def categorize_gcp_resources(project_id, credentials_path, bucket_quota_gb, thre
     except Exception as e:
         print(f"❌ Error analyzing buckets: {e}")
 
-def categorize_gcp_vm_cpu_utilization(project_id, credentials_path, thresholds):
+def categorize_gcp_vm_cpu_utilization(project_id, credentials, thresholds):
     """
     Analyze VM instances and identify those with low CPU utilization.
 
@@ -644,7 +653,7 @@ def categorize_gcp_vm_cpu_utilization(project_id, credentials_path, thresholds):
     print("=" * 60)
 
 
-    credentials = service_account.Credentials.from_service_account_file(credentials_path)
+    #credentials = service_account.Credentials.from_service_account_file(credentials_path)
     client = asset_v1.AssetServiceClient(credentials=credentials)
     scope = f"projects/{project_id}"
     low_cpu_vms = []
@@ -753,7 +762,7 @@ def list_subnets_with_cidr_and_ip_usage(project_id, thresholds):
     except Exception as e:
         print(f"❌ Error analyzing subnets: {e}")
 
-def categorize_gcp_disk_utilization(project_id, credentials_path, thresholds):
+def categorize_gcp_disk_utilization(project_id, credentials, thresholds):
     """
     Analyze persistent disks and identify those with low utilization based on allocated size.
     Since actual disk usage metrics aren't available via basic Compute API, we identify
@@ -772,7 +781,7 @@ def categorize_gcp_disk_utilization(project_id, credentials_path, thresholds):
     print("📋 Identifying potentially underutilized disks based on size and status")
     print("⚡ Using aggregated list API for maximum speed")
 
-    credentials = service_account.Credentials.from_service_account_file(credentials_path)
+    #credentials = service_account.Credentials.from_service_account_file(credentials_path)
     compute = discovery.build('compute', 'v1', credentials=credentials)
 
     disks = []
@@ -867,7 +876,7 @@ def categorize_gcp_disk_utilization(project_id, credentials_path, thresholds):
 # JSON REPORT GENERATION
 # ================================================================================
 
-def collect_optimization_candidates(thresholds):
+def collect_optimization_candidates(project_id, credentials, thresholds):
     """
     Collect detailed information about resources that meet optimization criteria.
 
@@ -891,9 +900,9 @@ def collect_optimization_candidates(thresholds):
     }
 
     # Initialize credentials and clients
-    credentials = service_account.Credentials.from_service_account_file(CREDENTIALS_PATH)
+    #credentials = service_account.Credentials.from_service_account_file(CREDENTIALS_PATH)
     asset_client = asset_v1.AssetServiceClient(credentials=credentials)
-    scope = f"projects/{PROJECT_ID}"
+    scope = f"projects/{project_id}"
     bucket_quota_gb = 100
     bucket_quota_bytes = bucket_quota_gb * 1_000_000_000
    # disk_quota_bytes = DISK_QUOTA_GB * 1_000_000_000
@@ -1205,7 +1214,7 @@ def collect_optimization_candidates(thresholds):
 
     return optimization_candidates
 
-def save_optimization_report(thresholds):
+def save_optimization_report(thresholds, gcp_credentials):
     """
     Generate and save MongoDB-ready resource records as JSON array.
     """
@@ -1213,8 +1222,7 @@ def save_optimization_report(thresholds):
     print("=" * 60)
 
     # Collect optimization candidates
-    candidates = collect_optimization_candidates(thresholds)
-
+    candidates = collect_optimization_candidates(PROJECT_ID, gcp_credentials, thresholds)
 
     # Create flat array of resource metadata for MongoDB
     mongodb_records = []
@@ -1478,16 +1486,15 @@ if __name__ == "__main__":
 
     try:
         # Run comprehensive resource analysis
-        categorize_gcp_resources(PROJECT_ID, CREDENTIALS_PATH, bucket_quota_gb=100, thresholds=thresholds)
-        categorize_gcp_vm_cpu_utilization(PROJECT_ID, CREDENTIALS_PATH, thresholds=thresholds)
+        categorize_gcp_resources(PROJECT_ID, gcp_credentials, bucket_quota_gb=100, thresholds=thresholds)
+        categorize_gcp_vm_cpu_utilization(PROJECT_ID, gcp_credentials, thresholds=thresholds)
         list_subnets_with_cidr_and_ip_usage(PROJECT_ID, thresholds=thresholds)
 
         # Run disk analysis
-        categorize_gcp_disk_utilization(PROJECT_ID, CREDENTIALS_PATH, thresholds=thresholds)
+        categorize_gcp_disk_utilization(PROJECT_ID, gcp_credentials, thresholds=thresholds)
 
         # Generate and save detailed JSON report
-        save_optimization_report(thresholds) # Pass thresholds here too
-
+        save_optimization_report(thresholds, gcp_credentials)
         # Insert records to MongoDB if available
         try:
             with open("gcp_optimization.json", 'r', encoding='utf-8') as f:
