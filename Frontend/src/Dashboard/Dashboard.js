@@ -38,7 +38,6 @@ function Dashboard() {
   const [environmentSummary, setEnvironmentSummary] = useState([]);
   const [showFilter, setShowFilter] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [lastUpdated, setLastUpdated] = useState(null);
   const [costCenterSummary, setCostCenterSummary] = useState([]);
   const [applicationCodeSummary, setApplicationCodeSummary] = useState([]);
 
@@ -143,10 +142,9 @@ function Dashboard() {
         setApplicationCodeSummary(applicationCodeSummaryArray);
 
         setLoading(false);
-        setLastUpdated(new Date());
       })
       .catch((err) => { console.error(err); setLoading(false); });
-  }, []);
+  }, [user.email]);
 
   const handleInputChange = (e) => {
     setFilters({
