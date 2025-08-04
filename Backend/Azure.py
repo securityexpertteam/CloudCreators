@@ -13,14 +13,16 @@ from azure.mgmt.network import NetworkManagementClient
 from pymongo import MongoClient
 import os
 import ipaddress
-#Last Update by subhash
-# --- Argument Parser for Azure Credentials ---
+
+# --- Argument Parser for Azure Credentials and MongoDB ---
 parser = argparse.ArgumentParser(description="Azure Resource Optimization Script")
 parser.add_argument("--client_id", required=True, help="Azure Client ID")
 parser.add_argument("--client_secret", required=True, help="Azure Client Secret")
 parser.add_argument("--tenant_id", required=True, help="Azure Tenant ID")
 parser.add_argument("--subscription_id", required=True, help="Azure Subscription ID")
 parser.add_argument("--email", required=True, help="User Email for filtering configs")
+parser.add_argument("--mongo_uri", default="mongodb://localhost:27017/", help="MongoDB connection URI")
+parser.add_argument("--db_name", default="myDB", help="MongoDB database name")
 args = parser.parse_args()
 
 client_id = args.client_id
@@ -28,22 +30,37 @@ client_secret = args.client_secret
 tenant_id = args.tenant_id
 subscription_id = args.subscription_id
 user_email = args.email
+MONGO_URI = args.mongo_uri
+DB_NAME = args.db_name
 
-print("Client ID:", args.client_id)
-print("Client Secret:", args.client_secret)
+# print("Client ID:", args.client_id)
+# print("Client Secret:", args.client_secret)
 print("Tenant ID:", args.tenant_id)
 print("Subscription ID:", args.subscription_id)
 print("Email:", args.email)
 
 # --- MongoDB connection details ---
-MONGO_URI = os.getenv("MONGO_URI", "mongodb://localhost:27017/")
-DB_NAME = os.getenv("DB_NAME", "myDB")
 client = MongoClient(MONGO_URI)
 db = client[DB_NAME]
 triggers_collection = db["triggers"]
 cost_insights_collection = db["Cost_Insights"]
 environment_onboarding_collection = db["environmentOnboarding"]
 standard_config_collection = db["standardConfigsDb"]
+
+# Define required tag names as a list:
+REQUIRED_TAG_NAMES = [
+    "ApplicationCode",
+    "CIO",
+    "CloudProvider",
+    "CostCenter",
+    "Entity",
+    "Environment",
+    "Feature",
+    "Lab",
+    "Owner",
+    "Platform",
+    "Ticket"
+]
 
 # Get stor_size and thresholds from standardConfigsDb collection for the current email
 config_thresholds = standard_config_collection.find_one(
@@ -249,7 +266,7 @@ def analyze_azure_resources():
 
     matched_count = 0
     unmatched_count = 0
-    underutilized_storage_accounts = []
+    underutilized_resources = []
 
     # Iterate and format output
     for resource in resource_client.resources.list():
@@ -318,7 +335,7 @@ def analyze_azure_resources():
                 if stor_size_gb is not None and sc_stor_size_in_gb is not None and stor_size_gb < sc_stor_size_in_gb:
                     formatted_resource["Current_Size"] = stor_size_gb
                     print(f"[UNDERUTILIZED] Storage Account: {resource.name} - Size: {stor_size_gb}GB")
-                    underutilized_storage_accounts.append(formatted_resource)
+                    underutilized_resources.append(formatted_resource)
             continue
 
         # --- Virtual Machine logic ---
@@ -350,7 +367,7 @@ def analyze_azure_resources():
                 if total_avg > VM_UNDERUTILIZED_TOTAL_AVG_THRESHOLD:
                     formatted_resource["Finding"] = "VM underutilised"
                     formatted_resource["Recommendation"] = "Scale Down"
-                    underutilized_storage_accounts.append(formatted_resource)
+                    underutilized_resources.append(formatted_resource)
                     print(f"[UNDERUTILIZED] VM: {resource.name} - Total Avg: {total_avg:.2f}")
             continue
 
@@ -387,8 +404,44 @@ def analyze_azure_resources():
                 formatted_resource["Disk_Attached"] = attached
                 formatted_resource["Finding"] = ", ".join(findings)
                 formatted_resource["Recommendation"] = ", ".join(recommendations)
-                underutilized_storage_accounts.append(formatted_resource)
+                underutilized_resources.append(formatted_resource)
                 print(f"[UNDERUTILIZED] Disk: {resource.name} - Size: {disk_size_gb}GB, Status: {disk_status}, Attached: {attached}")
+            continue
+
+        # Find missing required tags
+        missing_tags = [tag for tag in REQUIRED_TAG_NAMES if tag not in tags or not tags.get(tag)]
+        if missing_tags:
+            formatted_resource = {
+                "_id": str(resource.id),
+                "CloudProvider": tags.get("CloudProvider", "Azure"),
+                "ManagementUnitId": subscription_id,
+                "ApplicationCode": tags.get("ApplicationCode", "na").lower(),
+                "CostCenter": tags.get("CostCenter", "na").lower(),
+                "CIO": tags.get("CIO", "na").lower(),
+                "Platform": tags.get("Platform", "na").lower(),
+                "Lab": tags.get("Lab", "na").lower(),
+                "Feature": tags.get("Feature", "na").lower(),
+                "Owner": tags.get("Owner", "na").lower(),
+                "TicketId": tags.get("Ticket", "na").lower(),
+                "ResourceType": resource_type_value.capitalize(),
+                "SubResourceType": sub_resource_type.lower(),
+                "ResourceName": resource.name,
+                "Region": resource.location if resource.location else "na",
+                "TotalCost": 0 if total_cost == "Unknown" else total_cost,
+                "Currency": tags.get("Currency", "usd").upper(),
+                "Finding": "Untagged resource",
+                "MissingTags": ", ".join(missing_tags),
+                "Recommendation": "Add Tag",
+                "Environment": tags.get("Environment", "na").lower(),
+                "Timestamp": datetime.datetime.utcnow().isoformat() + "Z",
+                "ConfidenceScore": tags.get("ConfidenceScore", "na"),
+                "Status": tags.get("Status", "available").lower(),
+                "Entity": tags.get("Entity", "na").lower(),
+                "RootId": tenant_id,
+                "Email": user_email
+            }
+            underutilized_resources.append(formatted_resource)
+            print(f"[UNTAGGED] Resource: {resource.name} - Missing tags: {', '.join(missing_tags)}")
             continue
 
         # Don't insert any resources into database during resource loop - only JSON data will be inserted
@@ -447,33 +500,27 @@ def analyze_azure_resources():
                     "VNet": vnet.name,
                     "ResourceGroup": resource_group_name
                 }
-                underutilized_storage_accounts.append(formatted_resource)
+                underutilized_resources.append(formatted_resource)
                 print(f"  ⚠️  {subnet.name} (VNet: {vnet.name}) - {free_percent:.2f}% free IPs (flagged)")
 
-    # Create and save underutilized storage accounts to fixed JSON file (replace every time)
+    # Create and save underutilized resources to fixed JSON file (replace every time)
     filename = "azure_underutilised.json"
     
-    if underutilized_storage_accounts:
+    if underutilized_resources:
         try:
             with open(filename, 'w') as f:
-                json.dump(underutilized_storage_accounts, f, indent=2, default=str)
-            print(f"[INFO] Saved {len(underutilized_storage_accounts)} underutilized storage accounts to {filename}")
+                json.dump(underutilized_resources, f, indent=2, default=str)
+            print(f"[INFO] Saved {len(underutilized_resources)} underutilized resources to {filename}")
         except Exception as e:
-            print(f"[ERROR] Failed to save underutilized storage accounts to JSON: {e}")
+            print(f"[ERROR] Failed to save underutilized resources to JSON: {e}")
     else:
-        # Dont create Empty json file if there is no response from CSP APIs.
-        # Create empty JSON file even when no underutilized storage accounts found
-        try:
-            with open(filename, 'w') as f:
-                json.dump([], f, indent=2)
-            print(f"[INFO] Created empty JSON file {filename} - no underutilized storage accounts found")
-        except Exception as e:
-            print(f"[ERROR] Failed to create empty JSON file: {e}")
+        # Don't create empty JSON file if there is no response from CSP APIs or no underutilized resources found
+        print(f"[INFO] No underutilized resources found. JSON file not created.")
 
-    # Insert ONLY underutilized storage accounts into database based on JSON file content
+    # Insert ONLY underutilized resources into database based on JSON file content
     try:
         # Validate JSON before insertion
-        json_test = json.dumps(underutilized_storage_accounts, default=str)
+        json_test = json.dumps(underutilized_resources, default=str)
         
         # if Azure Json File Exists && It is readable as a Json content 
         if True:
@@ -496,9 +543,9 @@ def analyze_azure_resources():
                 print("[INFO] Collection is empty, no records to clear")
                 
             # Insert underutilized storage accounts into database
-            if underutilized_storage_accounts:
-                cost_insights_collection.insert_many(underutilized_storage_accounts)
-                print(f"[INFO] Inserted {len(underutilized_storage_accounts)} underutilized storage accounts into database")
+            if underutilized_resources:
+                cost_insights_collection.insert_many(underutilized_resources)
+                print(f"[INFO] Inserted {len(underutilized_resources)} underutilized storage accounts into database")
             else:
                 print("[INFO] No underutilized storage accounts found to insert")
             
@@ -519,9 +566,8 @@ def analyze_azure_resources():
     print(f"[INFO] Total resources processed: {matched_count + unmatched_count}")
     print(f"[INFO] Matched resources with cost data: {matched_count}")
     print(f"[INFO] Unmatched resources (no cost data): {unmatched_count}")
-    print(f"[INFO] Underutilized storage accounts (<1GB): {len(underutilized_storage_accounts)}")
+    print(f"[INFO] Underutilized accounts (<1GB): {len(underutilized_resources)}")
     print("[INFO] Azure resource optimization analysis completed.")
 
 if __name__ == "__main__":
     analyze_azure_resources()
-
