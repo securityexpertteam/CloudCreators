@@ -105,7 +105,7 @@ const SignUp = () => {
             onClick={() => navigate("/signin")}
             style={{ marginTop: "16px", background: "none", border: "none", color: "#007bff", cursor: "pointer", textDecoration: "underline" }}
           >
-            Already have an account?
+            Sign Up?
           </button>
         </div>
       </form>

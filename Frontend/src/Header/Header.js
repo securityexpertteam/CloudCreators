@@ -19,7 +19,7 @@ const Header = () => {
 
       <div className="right-section">
         <nav className="nav-links">
-          <NavLink to="/UserOnboarding" className={({ isActive }) => isActive ? "active" : ""}>
+          <NavLink to="/environmentOnboarding" className={({ isActive }) => isActive ? "active" : ""}>
             Environment Onboarding
           </NavLink>
           <NavLink to="/config" className={({ isActive }) => isActive ? "active" : ""}>

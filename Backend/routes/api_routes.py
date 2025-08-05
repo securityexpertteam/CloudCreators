@@ -7,11 +7,9 @@ from datetime import datetime, timezone
 from cryptography.fernet import Fernet
 import bcrypt
 from bson import ObjectId
-
-print(Fernet.generate_key().decode())
-
 import os
 import base64
+from dateutil import parser
 
 router = APIRouter()
 
@@ -133,7 +131,7 @@ async def environment_onboarding(request: Request):
         user_dict = dict(user)
         user_dict["email"] = email
 
-        fernet = Fernet(os.environ["FERNET_SECRET_KEY"])
+        fernet = Fernet(os.environ["fernet_key"])
 
         # Encrypt both srvacctPass and srvaccntName
         encrypted_pass = fernet.encrypt(user["srvacctPass"].encode()).decode()
@@ -175,13 +173,75 @@ def delete_environment(env_id: str):
         raise HTTPException(status_code=404, detail="Environment not found")
     return {"message": "Environment deleted successfully"}
 
-# === TRIGGER SCHEDULE === 
+# # === TRIGGER SCHEDULE === 
+# @router.post("/triggers")
+# async def create_trigger(trigger: Trigger):
+#     # Find the latest trigger for this email
+#     latest = triggers_collection.find_one({"email": trigger.email}, sort=[("_id", -1)])
+#     if latest and latest.get("Status") in ("Pending", "InProgress"):
+#         raise HTTPException(status_code=400, detail="Already scheduled or running for this user.")
+
+#     data = {
+#         "email": trigger.email,
+#         "SystemTimeStamp": datetime.now(timezone.utc),
+#         "ScheduledTimeStamp": trigger.ScheduledTimeStamp,
+#         "Status": "Pending"
+#     }
+#     result = triggers_collection.insert_one(data)
+#     data["_id"] = str(result.inserted_id)
+#     return {"message": "Schedule saved", "data": data}
+
+# @router.get("/trigger_status/{email}")
+# def get_trigger_status(email: str):
+#     trigger = triggers_collection.find_one({"email": email}, sort=[("_id", -1)])
+#     if not trigger:
+#         raise HTTPException(status_code=404, detail="No trigger found")
+#     return {"status": trigger["Status"]}
+
+# # --- ADD THIS ENDPOINT ---
+# @router.get("/last_scan/{email}")
+# def get_last_scan(email: str):
+#     trigger = triggers_collection.find_one({"email": email}, sort=[("_id", -1)])
+#     if not trigger:
+#         return {"status": None, "scheduled_time": None}
+#     # Convert datetime to ISO string in UTC for frontend
+#     scheduled_time = None
+#     if trigger.get("ScheduledTimeStamp"):
+#         scheduled_time = trigger["ScheduledTimeStamp"].astimezone(timezone.utc).isoformat()
+#     return {
+#         "status": trigger.get("Status"),
+#         "scheduled_time": scheduled_time
+        
+        
+#     }
+    
+# @router.get("/triggers/latest")
+# async def get_latest_trigger(email: str):
+#     latest = triggers_collection.find_one(
+#         {"email": email},
+#         sort=[("SystemTimeStamp", -1)]
+#     )
+#     if latest:
+#         latest["_id"] = str(latest["_id"])
+#     return latest
+   
+
 @router.post("/triggers")
 async def create_trigger(trigger: Trigger):
+    # Delete all previous triggers for this user
+    triggers_collection.delete_many({"email": trigger.email})
     # Find the latest trigger for this email
     latest = triggers_collection.find_one({"email": trigger.email}, sort=[("_id", -1)])
     if latest and latest.get("Status") in ("Pending", "InProgress"):
         raise HTTPException(status_code=400, detail="Already scheduled or running for this user.")
+
+    st = trigger.ScheduledTimeStamp
+    if isinstance(st, str):
+        st = parser.isoparse(st)
+    if st.tzinfo is None:
+        st = st.replace(tzinfo=timezone.utc)
+    else:
+        st = st.astimezone(timezone.utc)
 
     data = {
         "email": trigger.email,
@@ -213,17 +273,4 @@ def get_last_scan(email: str):
     return {
         "status": trigger.get("Status"),
         "scheduled_time": scheduled_time
-        
-        
     }
-    
-@router.get("/triggers/latest")
-async def get_latest_trigger(email: str):
-    latest = triggers_collection.find_one(
-        {"email": email},
-        sort=[("SystemTimeStamp", -1)]
-    )
-    if latest:
-        latest["_id"] = str(latest["_id"])
-    return latest
-   

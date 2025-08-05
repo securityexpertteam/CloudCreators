@@ -44,7 +44,7 @@ const SignIn = () => {
         localStorage.setItem("email", result.user.email); // <-- Save email for config logic!
         localStorage.setItem("user", JSON.stringify(result.user)); // optional: save full user
         //alert(result.message);
-        navigate("/userOnboarding");
+        navigate("/environmentOnboarding");
         console.log("User signed in successfully:", result.user);
       } else {
         setError(result.detail || result.message || "Login failed");
@@ -109,7 +109,7 @@ const SignIn = () => {
             className="forgot-password-button"
             onClick={() => alert("Forgot Password feature coming soon!")}
           >
-            Forgot your password?
+            Forgot password?
           </button>
         </div>
         <button type="submit" className="signin-button" disabled={submitting}>
@@ -122,7 +122,7 @@ const SignIn = () => {
             onClick={() => navigate("/signup")}
             style={{ marginTop: "16px", background: "none", border: "none", color: "#007bff", cursor: "pointer", textDecoration: "underline" }}
           >
-            I don't have account
+            Sign Up?
           </button>
         </div>
       </form>

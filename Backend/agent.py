@@ -10,9 +10,47 @@ from dotenv import load_dotenv
 import os
 from cryptography.fernet import Fernet
 
+
+# === STEP 1: Conditionally write key to .env ===
+def append_key_to_env(env_file=".env", env_key="fernet_key"):
+    load_dotenv(dotenv_path=env_file)
+    existing_key = os.environ.get(env_key)
+
+    if existing_key:
+        print(f"✅ Key '{env_key}' already exists in {env_file}.")
+        return existing_key.encode()
+
+    new_key = Fernet.generate_key().decode()
+
+    with open(env_file, "a") as file:
+        file.write(f"{env_key}={"'"+new_key+"'"}\n")
+
+    print(f"🆕 Fernet key appended to {env_file} as '{env_key}'")
+    return new_key.encode()
+
+# === STEP 2: Load key from env ===
+def load_key_from_env(env_key="fernet_key"):
+    load_dotenv()
+    key = os.environ.get(env_key)
+    if not key:
+        raise ValueError(f"⚠️ Key '{env_key}' not found in environment")
+    return key.encode()
+
+# === STEP 3: Encrypt ===
+def encrypt_message(message: str, key: bytes) -> bytes:
+    fernet = Fernet(key)
+    return fernet.encrypt(message.encode())
+
+# === STEP 4: Decrypt ===
+def decrypt_message(token: bytes, key: bytes) -> str:
+    fernet = Fernet(key)
+    return fernet.decrypt(token).decode()
+
+
+append_key_to_env()
 # Load the .env file
 load_dotenv()
-FERNET_SECRET_KEY = os.getenv("FERNET_SECRET_KEY")
+FERNET_SECRET_KEY = os.getenv("fernet_key")
 fernet = Fernet(FERNET_SECRET_KEY)
 
 
@@ -138,6 +176,10 @@ try:
                                         "--subscription_id", managementUnit_Id,
                                         "--email", email_to_find
                                     ]
+                                print(tenant_id)
+                                print(managementUnit_Id)
+                                print(username)
+                                print(password)
                                 result = subprocess.run(cmd, capture_output=True, text=True)
                                 
                             elif cloud_name == 'GCP':
