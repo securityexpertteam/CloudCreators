@@ -208,7 +208,6 @@ def get_subnet_free_ip_percent(network_client, resource_group, vnet_name, subnet
         return None
 
 def analyze_azure_resources():
-    """Analyze Azure resources and identify underutilized storage accounts."""
     print("[INFO] Starting Azure resource optimization analysis...")
 
     # Use credentials from argparse
@@ -223,6 +222,7 @@ def analyze_azure_resources():
     end_date = datetime.datetime.utcnow()
     start_date = end_date - datetime.timedelta(days=7)
 
+    # Cost query setup
     cost_query = {
         "type": "Usage",
         "timeframe": "Custom",
@@ -268,18 +268,12 @@ def analyze_azure_resources():
     unmatched_count = 0
     underutilized_resources = []
 
-    # Iterate and format output
+    # Main resource loop
     for resource in resource_client.resources.list():
         tags = resource.tags or {}
         type_parts = resource.type.split("/") if resource.type else ["Unknown", "Unknown"]
         resource_type = type_parts[0].replace("Microsoft.", "").capitalize() if len(type_parts) > 0 else "Unknown"
-        
-        # Set SubResourceType to "bucket" for storage accounts, otherwise use original logic
-        if resource.type and "Microsoft.Storage/storageAccounts" in resource.type:
-            sub_resource_type = "bucket"
-        else:
-            sub_resource_type = type_parts[1][0].upper() + type_parts[1][1:] if len(type_parts) > 1 else "Unknown"
-
+        sub_resource_type = "bucket" if resource.type and "Microsoft.Storage/storageAccounts" in resource.type else (type_parts[1][0].upper() + type_parts[1][1:] if len(type_parts) > 1 else "Unknown")
         normalized_id = normalize_resource_id(resource.id)
         total_cost = resource_cost_map.get(normalized_id, "Unknown")
 
@@ -288,15 +282,9 @@ def analyze_azure_resources():
         else:
             matched_count += 1
 
-        # Set specific values for storage accounts vs other resources
-        if resource.type and "Microsoft.Storage/storageAccounts" in resource.type:
-            finding_value = "Bucket underutilised"
-            recommendation_value = "Try Merging"
-            resource_type_value = "Storage"
-        else:
-            finding_value = tags.get("Finding", "auto-generated from cost explorer").lower()
-            recommendation_value = tags.get("Recommendation", "review usage").lower()
-            resource_type_value = resource_type.lower()
+        finding_value = "Bucket underutilised" if resource.type and "Microsoft.Storage/storageAccounts" in resource.type else tags.get("Finding", "auto-generated from cost explorer").lower()
+        recommendation_value = "Try Merging" if resource.type and "Microsoft.Storage/storageAccounts" in resource.type else tags.get("Recommendation", "review usage").lower()
+        resource_type_value = "Storage" if resource.type and "Microsoft.Storage/storageAccounts" in resource.type else resource_type.lower()
 
         formatted_resource = {
             "_id": str(resource.id),
@@ -304,10 +292,10 @@ def analyze_azure_resources():
             "ManagementUnitId": subscription_id,
             "ApplicationCode": tags.get("ApplicationCode", "na").lower(),
             "CostCenter": tags.get("CostCenter", "na").lower(),
-            "CIO":tags.get("CIO", "na").lower(),
-            "Platform":tags.get("Platform", "na").lower(),
-            "Lab":tags.get("Lab", "na").lower(),
-            "Feature":tags.get("Feature", "na").lower(),
+            "CIO": tags.get("CIO", "na").lower(),
+            "Platform": tags.get("Platform", "na").lower(),
+            "Lab": tags.get("Lab", "na").lower(),
+            "Feature": tags.get("Feature", "na").lower(),
             "Owner": tags.get("Owner", "na").lower(),
             "TicketId": tags.get("Ticket", "na").lower(),
             "ResourceType": resource_type_value.capitalize(),
@@ -323,11 +311,11 @@ def analyze_azure_resources():
             "ConfidenceScore": tags.get("ConfidenceScore", "na"),
             "Status": tags.get("Status", "available").lower(),
             "Entity": tags.get("Entity", "na").lower(),
-            "RootId": tenant_id,            
-            "Email": user_email      
+            "RootId": tenant_id,
+            "Email": user_email
         }
 
-        # Check if this is a storage account and handle filtering
+        # Storage account underutilized logic
         if resource.type and "Microsoft.Storage/storageAccounts" in resource.type:
             resource_group_name = resource.id.split('/')[4] if len(resource.id.split('/')) > 4 else None
             if resource_group_name:
@@ -338,137 +326,74 @@ def analyze_azure_resources():
                     underutilized_resources.append(formatted_resource)
             continue
 
-        # --- Virtual Machine logic ---
+        # VM underutilized logic
         if resource.type and "Microsoft.Compute/virtualMachines" in resource.type:
-            avg_cpu = get_vm_average_cpu(
-                monitor_client,
-                resource.id,
-                start_date.isoformat() + "Z",
-                end_date.isoformat() + "Z"
-            )
-            avg_memory = get_vm_average_memory(
-                monitor_client,
-                resource.id,
-                start_date.isoformat() + "Z",
-                end_date.isoformat() + "Z"
-            )
-            avg_network = get_vm_average_network(
-                monitor_client,
-                resource.id,
-                start_date.isoformat() + "Z",
-                end_date.isoformat() + "Z"
-            )
-
+            avg_cpu = get_vm_average_cpu(monitor_client, resource.id, start_date.isoformat() + "Z", end_date.isoformat() + "Z")
+            avg_memory = get_vm_average_memory(monitor_client, resource.id, start_date.isoformat() + "Z", end_date.isoformat() + "Z")
+            avg_network = get_vm_average_network(monitor_client, resource.id, start_date.isoformat() + "Z", end_date.isoformat() + "Z")
             metrics = [m for m in [avg_cpu, avg_memory, avg_network] if m is not None]
             if metrics:
                 total_avg = sum(metrics) / len(metrics)
                 formatted_resource["Current_Avg_VM"] = total_avg
-
-                if total_avg > VM_UNDERUTILIZED_TOTAL_AVG_THRESHOLD:
+                if total_avg > VM_UNDERUTILIZED_CPU_THRESHOLD:
                     formatted_resource["Finding"] = "VM underutilised"
                     formatted_resource["Recommendation"] = "Scale Down"
                     underutilized_resources.append(formatted_resource)
                     print(f"[UNDERUTILIZED] VM: {resource.name} - Total Avg: {total_avg:.2f}")
             continue
 
-        # --- Managed Disk logic ---
+        # Managed Disk logic
         if resource.type and "Microsoft.Compute/disks" in resource.type:
-            # Get disk details
             disk = compute_client.disks.get(resource_group_name=resource.id.split('/')[4], disk_name=resource.name)
             disk_size_gb = disk.disk_size_gb
             disk_status = getattr(disk, "disk_state", None) or getattr(disk, "provisioning_state", None)
             attached = bool(disk.managed_by)
-            
-            findings = []
-            recommendations = []
             underutilized = False
-
             if disk_size_gb is not None and disk_size_gb < DISK_QUOTA_GB:
-                findings.append("disk small")
-                recommendations.append("scale down")
                 underutilized = True
-
             if not attached:
-                findings.append("disk unattached")
-                recommendations.append("delete or attach")
                 underutilized = True
-
             if disk_status and disk_status.lower() != "succeeded":
-                findings.append(f"disk status {disk_status}")
-                recommendations.append("investigate")
                 underutilized = True
-
             if underutilized:
                 formatted_resource["Current_Disk_Size_GB"] = disk_size_gb
                 formatted_resource["Disk_Status"] = disk_status
                 formatted_resource["Disk_Attached"] = attached
-                formatted_resource["Finding"] = ", ".join(findings)
-                formatted_resource["Recommendation"] = ", ".join(recommendations)
+                formatted_resource["Finding"] = "Disk underutilised"
+                formatted_resource["Recommendation"] = "scale down"
                 underutilized_resources.append(formatted_resource)
                 print(f"[UNDERUTILIZED] Disk: {resource.name} - Size: {disk_size_gb}GB, Status: {disk_status}, Attached: {attached}")
             continue
 
-        # Find missing required tags
+        # Untagged resource logic
         missing_tags = [tag for tag in REQUIRED_TAG_NAMES if tag not in tags or not tags.get(tag)]
         if missing_tags:
-            formatted_resource = {
-                "_id": str(resource.id),
-                "CloudProvider": tags.get("CloudProvider", "Azure"),
-                "ManagementUnitId": subscription_id,
-                "ApplicationCode": tags.get("ApplicationCode", "na").lower(),
-                "CostCenter": tags.get("CostCenter", "na").lower(),
-                "CIO": tags.get("CIO", "na").lower(),
-                "Platform": tags.get("Platform", "na").lower(),
-                "Lab": tags.get("Lab", "na").lower(),
-                "Feature": tags.get("Feature", "na").lower(),
-                "Owner": tags.get("Owner", "na").lower(),
-                "TicketId": tags.get("Ticket", "na").lower(),
-                "ResourceType": resource_type_value.capitalize(),
-                "SubResourceType": sub_resource_type.lower(),
-                "ResourceName": resource.name,
-                "Region": resource.location if resource.location else "na",
-                "TotalCost": 0 if total_cost == "Unknown" else total_cost,
-                "Currency": tags.get("Currency", "usd").upper(),
-                "Finding": "Untagged resource",
-                "MissingTags": ", ".join(missing_tags),
-                "Recommendation": "Add Tag",
-                "Environment": tags.get("Environment", "na").lower(),
-                "Timestamp": datetime.datetime.utcnow().isoformat() + "Z",
-                "ConfidenceScore": tags.get("ConfidenceScore", "na"),
-                "Status": tags.get("Status", "available").lower(),
-                "Entity": tags.get("Entity", "na").lower(),
-                "RootId": tenant_id,
-                "Email": user_email
-            }
+            formatted_resource["TotalCost"] = 0 if total_cost == "Unknown" else total_cost
+            formatted_resource["Finding"] = "Untagged resource"
+            formatted_resource["MissingTags"] = ", ".join(missing_tags)
+            formatted_resource["Recommendation"] = "Add Tag"
             underutilized_resources.append(formatted_resource)
             print(f"[UNTAGGED] Resource: {resource.name} - Missing tags: {', '.join(missing_tags)}")
             continue
 
-        # Don't insert any resources into database during resource loop - only JSON data will be inserted
-
-    # --- Subnet analysis (after main resource loop) ---
+    # --- Subnet analysis ---
     for vnet in network_client.virtual_networks.list_all():
         vnet_id_parts = vnet.id.split("/")
         resource_group_name = vnet_id_parts[4]
         for subnet in network_client.subnets.list(resource_group_name, vnet.name):
-            # Exclude default subnets
             if "default" in subnet.name.lower():
                 print(f"  • {subnet.name} (Default VPC) - Skipped")
                 continue
-
             prefix = subnet.address_prefix
             if not prefix:
                 print(f"  • {subnet.name} (VNet: {vnet.name}) - Skipped (no address prefix)")
                 continue
-
-            total_ips = ipaddress.ip_network(prefix).num_addresses - 5  # Azure reserves 5 IPs per subnet
+            total_ips = ipaddress.ip_network(prefix).num_addresses - 5
             used_ips = subnet.ip_configurations and len(subnet.ip_configurations) or 0
             free_ips = total_ips - used_ips
             free_percent = (free_ips / total_ips) * 100 if total_ips > 0 else 0
-
             print(f"  • {subnet.name} (VNet: {vnet.name}) - {free_percent:.2f}% free IPs")
             if free_percent > SUBNET_FREE_IP_THRESHOLD:
-                # Build formatted_resource for subnet using the same structure as storage accounts
                 formatted_resource = {
                     "_id": subnet.id,
                     "CloudProvider": "Azure",
@@ -503,9 +428,277 @@ def analyze_azure_resources():
                 underutilized_resources.append(formatted_resource)
                 print(f"  ⚠️  {subnet.name} (VNet: {vnet.name}) - {free_percent:.2f}% free IPs (flagged)")
 
-    # Create and save underutilized resources to fixed JSON file (replace every time)
+    # --- Orphaned resource detection ---
+    # Orphaned Disks
+    for disk in compute_client.disks.list():
+        if not disk.managed_by:
+            tags = disk.tags if hasattr(disk, "tags") and disk.tags else {}
+            formatted_resource = {
+                "_id": str(disk.id),
+                "CloudProvider": tags.get("CloudProvider", "Azure"),
+                "ManagementUnitId": subscription_id,
+                "ApplicationCode": tags.get("ApplicationCode", "na").lower(),
+                "CostCenter": tags.get("CostCenter", "na").lower(),
+                "CIO": tags.get("CIO", "na").lower(),
+                "Platform": tags.get("Platform", "na").lower(),
+                "Lab": tags.get("Lab", "na").lower(),
+                "Feature": tags.get("Feature", "na").lower(),
+                "Owner": tags.get("Owner", "na").lower(),
+                "TicketId": tags.get("Ticket", "na").lower(),
+                "ResourceType": "Storage",
+                "SubResourceType": "Disk",
+                "ResourceName": disk.name,
+                "Region": disk.location,
+                "TotalCost": 0,
+                "Currency": "USD",
+                "Finding": "OrphandResource",
+                "Recommendation": "Delete",
+                "Environment": tags.get("Environment", "na").lower(),
+                "Timestamp": datetime.datetime.utcnow().isoformat() + "Z",
+                "ConfidenceScore": tags.get("ConfidenceScore", "na"),
+                "Status": "available",
+                "Entity": tags.get("Entity", "na").lower(),
+                "RootId": tenant_id,
+                "Email": user_email,
+                "Size": f"{disk.disk_size_gb}GB"
+            }
+            underutilized_resources.append(formatted_resource)
+
+    # Orphaned NICs
+    for nic in network_client.network_interfaces.list_all():
+        if not nic.virtual_machine:
+            tags = nic.tags if hasattr(nic, "tags") and nic.tags else {}
+            formatted_resource = {
+                "_id": str(nic.id),
+                "CloudProvider": tags.get("CloudProvider", "Azure"),
+                "ManagementUnitId": subscription_id,
+                "ApplicationCode": tags.get("ApplicationCode", "na").lower(),
+                "CostCenter": tags.get("CostCenter", "na").lower(),
+                "CIO": tags.get("CIO", "na").lower(),
+                "Platform": tags.get("Platform", "na").lower(),
+                "Lab": tags.get("Lab", "na").lower(),
+                "Feature": tags.get("Feature", "na").lower(),
+                "Owner": tags.get("Owner", "na").lower(),
+                "TicketId": tags.get("Ticket", "na").lower(),
+                "ResourceType": "Network",
+                "SubResourceType": "NIC",
+                "ResourceName": nic.name,
+                "Region": nic.location,
+                "TotalCost": 0,
+                "Currency": "USD",
+                "Finding": "OrphandResource",
+                "Recommendation": "Delete",
+                "Environment": tags.get("Environment", "na").lower(),
+                "Timestamp": datetime.datetime.utcnow().isoformat() + "Z",
+                "ConfidenceScore": tags.get("ConfidenceScore", "na"),
+                "Status": "available",
+                "Entity": tags.get("Entity", "na").lower(),
+                "RootId": tenant_id,
+                "Email": user_email,
+                "Size": ""
+            }
+            underutilized_resources.append(formatted_resource)
+
+    # Orphaned Public IPs
+    for pip in network_client.public_ip_addresses.list_all():
+        if not pip.ip_configuration:
+            tags = pip.tags if hasattr(pip, "tags") and pip.tags else {}
+            formatted_resource = {
+                "_id": str(pip.id),
+                "CloudProvider": tags.get("CloudProvider", "Azure"),
+                "ManagementUnitId": subscription_id,
+                "ApplicationCode": tags.get("ApplicationCode", "na").lower(),
+                "CostCenter": tags.get("CostCenter", "na").lower(),
+                "CIO": tags.get("CIO", "na").lower(),
+                "Platform": tags.get("Platform", "na").lower(),
+                "Lab": tags.get("Lab", "na").lower(),
+                "Feature": tags.get("Feature", "na").lower(),
+                "Owner": tags.get("Owner", "na").lower(),
+                "TicketId": tags.get("Ticket", "na").lower(),
+                "ResourceType": "Network",
+                "SubResourceType": "PublicIps",
+                "ResourceName": pip.name,
+                "Region": pip.location,
+                "TotalCost": 0,
+                "Currency": "USD",
+                "Finding": "OrphandResource",
+                "Recommendation": "Delete",
+                "Environment": tags.get("Environment", "na").lower(),
+                "Timestamp": datetime.datetime.utcnow().isoformat() + "Z",
+                "ConfidenceScore": tags.get("ConfidenceScore", "na"),
+                "Status": "available",
+                "Entity": tags.get("Entity", "na").lower(),
+                "RootId": tenant_id,
+                "Email": user_email,
+                "Size": ""
+            }
+            underutilized_resources.append(formatted_resource)
+
+     # Prepare lists for orphaned NSG analysis
+    all_nsgs = list(network_client.network_security_groups.list_all())
+    all_nics = list(network_client.network_interfaces.list_all())
+    all_vnets = list(network_client.virtual_networks.list_all())
+    all_subnets = []
+    for vnet in all_vnets:
+        rg_name = vnet.id.split("/")[4]
+        all_subnets.extend(list(network_client.subnets.list(rg_name, vnet.name)))
+
+    # Orphaned NSGs
+    for nsg in all_nsgs:
+        nsg_id = nsg.id
+        nsg_nics = [nic for nic in all_nics if nic.network_security_group and nic.network_security_group.id == nsg_id]
+        nsg_subnets = [subnet for subnet in all_subnets if subnet.network_security_group and subnet.network_security_group.id == nsg_id]
+        security_rules = getattr(nsg, "security_rules", [])
+        if len(nsg_nics) == 0 and len(nsg_subnets) == 0 and len(security_rules) == 0:
+            tags = nsg.tags if hasattr(nsg, "tags") and nsg.tags else {}
+            formatted_resource = {
+                "_id": str(nsg.id),
+                "CloudProvider": tags.get("CloudProvider", "Azure"),
+                "ManagementUnitId": subscription_id,
+                "ApplicationCode": tags.get("ApplicationCode", "na").lower(),
+                "CostCenter": tags.get("CostCenter", "na").lower(),
+                "CIO": tags.get("CIO", "na").lower(),
+                "Platform": tags.get("Platform", "na").lower(),
+                "Lab": tags.get("Lab", "na").lower(),
+                "Feature": tags.get("Feature", "na").lower(),
+                "Owner": tags.get("Owner", "na").lower(),
+                "TicketId": tags.get("Ticket", "na").lower(),
+                "ResourceType": "Network",
+                "SubResourceType": "NSG",
+                "ResourceName": nsg.name,
+                "Region": nsg.location,
+                "TotalCost": 0,
+                "Currency": "USD",
+                "Finding": "OrphandResource",
+                "Recommendation": "Delete",
+                "Environment": tags.get("Environment", "na").lower(),
+                "Timestamp": datetime.datetime.utcnow().isoformat() + "Z",
+                "ConfidenceScore": tags.get("ConfidenceScore", "na"),
+                "Status": "available",
+                "Entity": tags.get("Entity", "na").lower(),
+                "RootId": tenant_id,
+                "Email": user_email,
+                "Size": ""
+            }
+            underutilized_resources.append(formatted_resource)
+
+    # --- Orphaned NSG Flow Logs ---
+    try:
+        locations = [loc.name for loc in network_client.locations.list()]
+        all_nsgs = {nsg.id: nsg for nsg in network_client.network_security_groups.list_all()}
+        all_vnets = {vnet.id: vnet for vnet in network_client.virtual_networks.list_all()}
+        for location in locations:
+            network_watchers = list(network_client.network_watchers.list(location))
+            for nw in network_watchers:
+                try:
+                    flow_logs = list(network_client.flow_logs.list(nw.resource_group_name, nw.name))
+                except Exception as e:
+                    print(f"[WARNING] Could not fetch flow logs for Network Watcher {nw.name}: {e}")
+                    continue
+                for flow_log in flow_logs:
+                    # Orphaned NSG Flow Log
+                    if hasattr(flow_log, "network_security_group") and flow_log.network_security_group:
+                        nsg_id = flow_log.network_security_group.id
+                        if nsg_id not in all_nsgs:
+                            tags = flow_log.tags if hasattr(flow_log, "tags") and flow_log.tags else {}
+                            formatted_resource = {
+                                "_id": str(flow_log.id),
+                                "CloudProvider": tags.get("CloudProvider", "Azure"),
+                                "ManagementUnitId": subscription_id,
+                                "ApplicationCode": tags.get("ApplicationCode", "na").lower(),
+                                "CostCenter": tags.get("CostCenter", "na").lower(),
+                                "CIO": tags.get("CIO", "na").lower(),
+                                "Platform": tags.get("Platform", "na").lower(),
+                                "Lab": tags.get("Lab", "na").lower(),
+                                "Feature": tags.get("Feature", "na").lower(),
+                                "Owner": tags.get("Owner", "na").lower(),
+                                "TicketId": tags.get("Ticket", "na").lower(),
+                                "ResourceType": "Network",
+                                "SubResourceType": "NSGFlowLog",
+                                "ResourceName": flow_log.name,
+                                "Region": flow_log.location,
+                                "TotalCost": 0,
+                                "Currency": "USD",
+                                "Finding": "OrphandResource",
+                                "Recommendation": "Delete",
+                                "Environment": tags.get("Environment", "na").lower(),
+                                "Timestamp": datetime.datetime.utcnow().isoformat() + "Z",
+                                "ConfidenceScore": tags.get("ConfidenceScore", "na"),
+                                "Status": "available",
+                                "Entity": tags.get("Entity", "na").lower(),
+                                "RootId": tenant_id,
+                                "Email": user_email,
+                                "Size": ""
+                            }
+                            underutilized_resources.append(formatted_resource)
+                    # Orphaned VNET Flow Log
+                    elif hasattr(flow_log, "virtual_network") and flow_log.virtual_network:
+                        vnet_id = flow_log.virtual_network.id
+                        if vnet_id not in all_vnets:
+                            tags = flow_log.tags if hasattr(flow_log, "tags") and flow_log.tags else {}
+                            formatted_resource = {
+                                "_id": str(flow_log.id),
+                                "CloudProvider": tags.get("CloudProvider", "Azure"),
+                                "ManagementUnitId": subscription_id,
+                                "ApplicationCode": tags.get("ApplicationCode", "na").lower(),
+                                "CostCenter": tags.get("CostCenter", "na").lower(),
+                                "CIO": tags.get("CIO", "na").lower(),
+                                "Platform": tags.get("Platform", "na").lower(),
+                                "Lab": tags.get("Lab", "na").lower(),
+                                "Feature": tags.get("Feature", "na").lower(),
+                                "Owner": tags.get("Owner", "na").lower(),
+                                "TicketId": tags.get("Ticket", "na").lower(),
+                                "ResourceType": "Network",
+                                "SubResourceType": "VNETFlowLog",
+                                "ResourceName": flow_log.name,
+                                "Region": flow_log.location,
+                                "TotalCost": 0,
+                                "Currency": "USD",
+                                "Finding": "OrphandResource",
+                                "Recommendation": "Delete",
+                                "Environment": tags.get("Environment", "na").lower(),
+                                "Timestamp": datetime.datetime.utcnow().isoformat() + "Z",
+                                "ConfidenceScore": tags.get("ConfidenceScore", "na"),
+                                "Status": "available",
+                                "Entity": tags.get("Entity", "na").lower(),
+                                "RootId": tenant_id,
+                                "Email": user_email,
+                                "Size": ""
+                            }
+                            underutilized_resources.append(formatted_resource)
+    except Exception as e:
+        print(f"[WARNING] Error during orphaned flow log detection: {e}")
+
+    # --- Merge findings and recommendations by _id ---
+    merged_resources = {}
+    for res in underutilized_resources:
+        key = res["_id"]
+        if key in merged_resources:
+            # Merge Finding
+            existing_finding = merged_resources[key].get("Finding", "")
+            new_finding = res.get("Finding", "")
+            findings_set = set(existing_finding.split(";")) | set(new_finding.split(";"))
+            merged_resources[key]["Finding"] = ";".join([f for f in findings_set if f])
+
+            # Merge Recommendation
+            existing_recommendation = merged_resources[key].get("Recommendation", "")
+            new_recommendation = res.get("Recommendation", "")
+            recommendations_set = set(existing_recommendation.split(";")) | set(new_recommendation.split(";"))
+            merged_resources[key]["Recommendation"] = ";".join([r for r in recommendations_set if r])
+
+            # Merge MissingTags if present
+            if "MissingTags" in res:
+                existing_tags = merged_resources[key].get("MissingTags", "")
+                new_tags = res.get("MissingTags", "")
+                tags_set = set(existing_tags.split(";")) | set(new_tags.split(";"))
+                merged_resources[key]["MissingTags"] = ";".join([t for t in tags_set if t])
+        else:
+            merged_resources[key] = res
+
+    underutilized_resources = list(merged_resources.values())
+
+    # --- Save to JSON ---
     filename = "azure_underutilised.json"
-    
     if underutilized_resources:
         try:
             with open(filename, 'w') as f:
@@ -514,59 +707,46 @@ def analyze_azure_resources():
         except Exception as e:
             print(f"[ERROR] Failed to save underutilized resources to JSON: {e}")
     else:
-        # Don't create empty JSON file if there is no response from CSP APIs or no underutilized resources found
         print(f"[INFO] No underutilized resources found. JSON file not created.")
 
-    # Insert ONLY underutilized resources into database based on JSON file content
+    # --- Insert into MongoDB ---
     try:
-        # Validate JSON before insertion
         json_test = json.dumps(underutilized_resources, default=str)
-        
-        # if Azure Json File Exists && It is readable as a Json content 
-        if True:
-            print("[INFO] JSON validation passed - data is valid for MongoDB insertion")
-            
-
-            # Clear existing records from the collection before inserting new data
-            filter_query = {
-                "CloudProvider": "Azure",
-                "ManagementUnitId": subscription_id,
-                "Email": user_email
-            }
-        
-            # Clear existing records from the collection before inserting new data
-            existing_count = cost_insights_collection.count_documents(filter_query)
-            if existing_count > 0:
-                cost_insights_collection.delete_many({})
-                print(f"[INFO] Cleared {existing_count} existing records from Cost_Insights collection")
-            else:
-                print("[INFO] Collection is empty, no records to clear")
-                
-            # Insert underutilized storage accounts into database
-            if underutilized_resources:
-                cost_insights_collection.insert_many(underutilized_resources)
-                print(f"[INFO] Inserted {len(underutilized_resources)} underutilized storage accounts into database")
-            else:
-                print("[INFO] No underutilized storage accounts found to insert")
-            
+        print("[INFO] JSON validation passed - data is valid for MongoDB insertion")
+        filter_query = {
+            "CloudProvider": "Azure",
+            "ManagementUnitId": subscription_id,
+            "Email": user_email
+        }
+        existing_count = cost_insights_collection.count_documents(filter_query)
+        if existing_count > 0:
+            cost_insights_collection.delete_many(filter_query)
+            print(f"[INFO] Cleared {existing_count} existing records from Cost_Insights collection")
+        else:
+            print("[INFO] Collection is empty, no records to clear")
+        if underutilized_resources:
+            cost_insights_collection.insert_many(underutilized_resources)
+            print(f"[INFO] Inserted {len(underutilized_resources)} underutilized resources into database")
+        else:
+            print("[INFO] No underutilized resources found to insert")
     except json.JSONEncodeError as e:
         print(f"[ERROR] JSON validation failed: {e}")
         print("[ERROR] Skipping MongoDB insertion due to invalid JSON data")
     except Exception as e:
         print(f"[ERROR] Failed to insert data into database: {e}")
 
-    # Close MongoDB connection
+    # --- Close MongoDB connection ---
     try:
         client.close()
         print("[INFO] MongoDB connection closed successfully")
     except Exception as e:
         print(f"[WARNING] Error closing MongoDB connection: {e}")
 
-    # Final summary
+    # --- Final summary ---
     print(f"[INFO] Total resources processed: {matched_count + unmatched_count}")
     print(f"[INFO] Matched resources with cost data: {matched_count}")
     print(f"[INFO] Unmatched resources (no cost data): {unmatched_count}")
-    print(f"[INFO] Underutilized accounts (<1GB): {len(underutilized_resources)}")
+    print(f"[INFO] Underutilized/Orphaned resources: {len(underutilized_resources)}")
     print("[INFO] Azure resource optimization analysis completed.")
 
 if __name__ == "__main__":
