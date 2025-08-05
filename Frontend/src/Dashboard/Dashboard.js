@@ -33,30 +33,27 @@ function Dashboard() {
     ResourceType: "",
     Region: "",
     TotalCost: "",
+    CloudProvider: "",
+    Entity: "",
+    Feature: "",
+    Lab: "",
   });
   const [cloudProviderSummary, setCloudProviderSummary] = useState([]);
   const [environmentSummary, setEnvironmentSummary] = useState([]);
   const [showFilter, setShowFilter] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [lastUpdated, setLastUpdated] = useState(null);
   const [costCenterSummary, setCostCenterSummary] = useState([]);
   const [applicationCodeSummary, setApplicationCodeSummary] = useState([]);
-  const [latestTrigger, setLatestTrigger] = useState(null);
-
+  const [cioOptions, setCioOptions] = useState([]);
+  const [featureOptions, setFeatureOptions] = useState([]);
+  const [labOptions, setLabOptions] = useState([]);
+  const [featureCostSummary, setFeatureCostSummary] = useState([]);
+  const [labCostSummary, setLabCostSummary] = useState([]);
 
  const user = JSON.parse(localStorage.getItem("user") || "{}");
 
   useEffect(() => {
     setLoading(true);
-    axios.get(`http://localhost:8000/triggers/latest?email=${user.email}`)
-  .then((res) => {
-    setLatestTrigger(res.data);
-    console.log("Latest Trigger:", res.data);
-  })
-  .catch((err) => {
-    console.error("Failed to fetch latest trigger:", err);
-  });
-
     axios.get(`http://localhost:8000/api/resources?email=${user.email}`)
       .then((res) => {
         // Sort resources by TotalCost descending for table
@@ -153,11 +150,42 @@ function Dashboard() {
           .sort((a, b) => b.cost - a.cost);
         setApplicationCodeSummary(applicationCodeSummaryArray);
 
+        // Aggregate cost by Feature
+        const featureSummary = res.data.reduce((acc, curr) => {
+          if (!curr.Feature || !curr.TotalCost) return acc;
+          acc[curr.Feature] = (acc[curr.Feature] || 0) + Number(curr.TotalCost);
+          return acc;
+        }, {});
+        const featureSummaryArray = Object.entries(featureSummary)
+          .map(([feature, cost]) => ({ feature, cost: cost }))
+          .sort((a, b) => b.cost - a.cost);
+        setFeatureCostSummary(featureSummaryArray);
+
+        // Aggregate cost by Lab
+        const labSummary = res.data.reduce((acc, curr) => {
+          if (!curr.Lab || !curr.TotalCost) return acc;
+          acc[curr.Lab] = (acc[curr.Lab] || 0) + Number(curr.TotalCost);
+          return acc;
+        }, {});
+        const labSummaryArray = Object.entries(labSummary)
+          .map(([lab, cost]) => ({ lab, cost: cost }))
+          .sort((a, b) => b.cost - a.cost);
+        setLabCostSummary(labSummaryArray);
+
         setLoading(false);
-        setLastUpdated(new Date());
       })
       .catch((err) => { console.error(err); setLoading(false); });
-  }, []);
+  }, [user.email]);
+
+  useEffect(() => {
+    const uniqueCIOs = [...new Set(resources.map((r) => r.CIO))];
+    const uniqueFeatures = [...new Set(resources.map((r) => r.Feature))];
+    const uniqueLabs = [...new Set(resources.map((r) => r.Lab))];
+
+    setCioOptions(uniqueCIOs);
+    setFeatureOptions(uniqueFeatures);
+    setLabOptions(uniqueLabs);
+  }, [resources]);
 
   const handleInputChange = (e) => {
     setFilters({
@@ -174,29 +202,54 @@ function Dashboard() {
         (filters.CIO === "" || item.CIO === filters.CIO) &&
         (filters.ResourceType === "" || item.ResourceType === filters.ResourceType) &&
         (filters.Region === "" || item.Region === filters.Region) &&
+        (filters.Feature === "" || item.Feature === filters.Feature) &&
+        (filters.Lab === "" || item.Lab === filters.Lab) &&
         (filters.TotalCost === "" || item.TotalCost <= parseFloat(filters.TotalCost))
       );
     });
 
-    // Update summaries based on filtered resources
-    const updatedCloudProviderSummary = filtered.reduce((acc, curr) => {
-      if (!curr.CloudProvider || !curr.TotalCost) return acc;
-      acc[curr.CloudProvider] = (acc[curr.CloudProvider] || 0) + Number(curr.TotalCost);
-      return acc;
-    }, {});
-    setCloudProviderSummary(Object.entries(updatedCloudProviderSummary).map(([provider, cost]) => ({ provider, cost })));
+    if (filtered.length === 0) {
+      // If no data matches the filter, reset summaries and filtered resources
+      setFilteredResources([]);
+      setCloudProviderSummary([]);
+      setEntityCostSummary([]);
+      setCioCostSummary([]);
+      setRegionCostSummary([]);
+      setResourceTypeSummary([]);
+      setEnvironmentSummary([]);
+      setCostCenterSummary([]);
+      setApplicationCodeSummary([]);
+      setFeatureCostSummary([]); // Reset Feature-wise Total Cost
+      setLabCostSummary([]); // Reset Lab-wise Total Cost
+      return;
+    }
 
-    const updatedEntitySummary = filtered.reduce((acc, curr) => {
-      if (!curr.Entity || !curr.TotalCost) return acc;
-      acc[curr.Entity] = (acc[curr.Entity] || 0) + Number(curr.TotalCost);
-      return acc;
-    }, {});
-    setEntityCostSummary(Object.entries(updatedEntitySummary).map(([entity, cost]) => ({ entity, cost })));
+    // Update summaries dynamically based on filtered resources
+    const updateSummary = (key) => {
+      return filtered.reduce((acc, curr) => {
+        if (!curr[key] || !curr.TotalCost) return acc;
+        acc[curr[key]] = (acc[curr[key]] || 0) + Number(curr.TotalCost);
+        return acc;
+      }, {});
+    };
 
+    setCloudProviderSummary(Object.entries(updateSummary("CloudProvider")).map(([provider, cost]) => ({ provider, cost })));
+    setEntityCostSummary(Object.entries(updateSummary("Entity")).map(([entity, cost]) => ({ entity, cost })));
+    setCioCostSummary(Object.entries(updateSummary("CIO")).map(([cio, cost]) => ({ cio, cost })));
+    setRegionCostSummary(Object.entries(updateSummary("Region")).map(([region, cost]) => ({ region, cost })));
+    setResourceTypeSummary(Object.entries(updateSummary("ResourceType")).map(([type, cost]) => ({ type, cost })));
+    setEnvironmentSummary(Object.entries(updateSummary("Environment")).map(([env, cost]) => ({ env, cost })));
+    setCostCenterSummary(Object.entries(updateSummary("CostCenter")).map(([costCenter, cost]) => ({ costCenter, cost })));
+    setApplicationCodeSummary(Object.entries(updateSummary("ApplicationCode")).map(([applicationCode, cost]) => ({ applicationCode, cost })));
+    setFeatureCostSummary(Object.entries(updateSummary("Feature")).map(([feature, cost]) => ({ feature, cost }))); // Ensure Feature-wise Total Cost updates
+    setLabCostSummary(Object.entries(updateSummary("Lab")).map(([lab, cost]) => ({ lab, cost }))); // Ensure Lab-wise Total Cost updates
+
+    // Update filtered resources for the table
     setFilteredResources(filtered.sort((a, b) => (parseFloat(b.TotalCost) || 0) - (parseFloat(a.TotalCost) || 0)));
   };
 
   const clearFilters = () => {
+    // Reset filters to their initial state
     setFilters({
       CIO: "",
       ResourceType: "",
@@ -204,25 +257,30 @@ function Dashboard() {
       TotalCost: "",
       CloudProvider: "",
       Entity: "",
+      Feature: "",
+      Lab: "",
     });
-    setFilteredResources(resources);
 
-    // Reset summaries to original state
-    const originalCloudProviderSummary = resources.reduce((acc, curr) => {
-      if (!curr.CloudProvider || !curr.TotalCost) return acc;
-      acc[curr.CloudProvider] = (acc[curr.CloudProvider] || 0) + Number(curr.TotalCost);
-      return acc;
-    }, {});
-    setCloudProviderSummary(Object.entries(originalCloudProviderSummary).map(([provider, cost]) => ({ provider, cost })));
+    // Reset summaries and filtered resources to the original data
+    const updateSummary = (key) => {
+      return resources.reduce((acc, curr) => {
+        if (!curr[key] || !curr.TotalCost) return acc;
+        acc[curr[key]] = (acc[curr[key]] || 0) + Number(curr.TotalCost);
+        return acc;
+      }, {});
+    };
 
-    const originalEntitySummary = resources.reduce((acc, curr) => {
-      if (!curr.Entity || !curr.TotalCost) return acc;
-      acc[curr.Entity] = (acc[curr.Entity] || 0) + Number(curr.TotalCost);
-      return acc;
-    }, {});
-    setEntityCostSummary(Object.entries(originalEntitySummary).map(([entity, cost]) => ({ entity, cost })));
+    setCloudProviderSummary(Object.entries(updateSummary("CloudProvider")).map(([provider, cost]) => ({ provider, cost })));
+    setEntityCostSummary(Object.entries(updateSummary("Entity")).map(([entity, cost]) => ({ entity, cost })));
+    setCioCostSummary(Object.entries(updateSummary("CIO")).map(([cio, cost]) => ({ cio, cost })));
+    setRegionCostSummary(Object.entries(updateSummary("Region")).map(([region, cost]) => ({ region, cost })));
+    setResourceTypeSummary(Object.entries(updateSummary("ResourceType")).map(([type, cost]) => ({ type, cost })));
+    setEnvironmentSummary(Object.entries(updateSummary("Environment")).map(([env, cost]) => ({ env, cost })));
+    setCostCenterSummary(Object.entries(updateSummary("CostCenter")).map(([costCenter, cost]) => ({ costCenter, cost })));
+    setApplicationCodeSummary(Object.entries(updateSummary("ApplicationCode")).map(([applicationCode, cost]) => ({ applicationCode, cost })));
 
-    // Add similar resets for other summaries if needed
+    // Reset the table data
+    setFilteredResources(resources.sort((a, b) => (parseFloat(b.TotalCost) || 0) - (parseFloat(a.TotalCost) || 0)));
   };
 
   // Card summary data
@@ -334,40 +392,18 @@ function Dashboard() {
         position: 'relative',
         zIndex: 2,
       }}>
-        {latestTrigger && (
-  <div style={{
-    position: 'absolute',
-    top: 0,
-    right: 30,
-    background: 'rgba(255,255,255,0.08)',
-    padding: '10px 16px',
-    borderRadius: 12,
-    color: '#f5f5f5',
-    fontSize: 10,
-    fontWeight: 500,
-    zIndex: 3,
-    border: '1px solid rgba(255,255,255,0.15)'
-  }}>
-    {latestTrigger.Status === "Pending"
-      ? `Next Scan Scheduled: ${new Date(latestTrigger.ScheduledTimeStamp).toLocaleString()}`
-      : `Last Completed Scan: ${new Date(latestTrigger.ScheduledTimeStamp).toLocaleString()}`
-    }
-  </div>
-)}
         <div style={{width: 64, height: 64, background: 'rgba(40,40,50,0.8)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 36, fontWeight: 700, boxShadow: '0 2px 12px #111'}}>💸</div>
         <div style={{display: 'flex', flexDirection: 'column', alignItems: 'flex-start', justifyContent: 'center'}}>
           <h1 style={{margin: 0, fontSize: '2.2rem', letterSpacing: 1, color: '#fff', fontWeight: 800, textShadow: '0 2px 8px #111', lineHeight: 1.15, wordBreak: 'break-word'}}>FinOps Cloud Cost Dashboard</h1>
           <div style={{fontSize: 17, color: '#bbb', marginTop: 6, fontWeight: 500, lineHeight: 1.2}}>Cloud Spend, Utilization & Optimization Insights</div>
         </div>
-      
       </header>
-      
+
       {/* Card Summaries */}
       <div className="dashboard-cards glassy-cards" style={{
         display: 'flex', justifyContent: 'center', gap: 32, marginBottom: 32, flexWrap: 'wrap',
         zIndex: 1, position: 'relative',
       }}>
-      
         {/* Total Cloud Cost Card */}
         <div className="card glassy-card" style={{
           background: 'rgba(30,30,35,0.55)',
@@ -490,7 +526,7 @@ function Dashboard() {
             name="CloudProvider"
             value={filters.CloudProvider}
             onChange={handleInputChange}
-            style={{padding: 8, borderRadius: 6, border: '1px solid #ccc', minWidth: 120}}
+            style={{ padding: 8, borderRadius: 6, border: '1px solid #ccc', minWidth: 120 }}
           >
             <option value="">Select Cloud Provider</option>
             {cloudProviderSummary.map((provider) => (
@@ -501,47 +537,56 @@ function Dashboard() {
             name="Entity"
             value={filters.Entity}
             onChange={handleInputChange}
-            style={{padding: 8, borderRadius: 6, border: '1px solid #ccc', minWidth: 120}}
+            style={{ padding: 8, borderRadius: 6, border: '1px solid #ccc', minWidth: 120 }}
           >
             <option value="">Select Entity</option>
             {entityCostSummary.map((entity) => (
               <option key={entity.entity} value={entity.entity}>{entity.entity}</option>
             ))}
           </select>
-          <input
-            type="text"
+          <select
             name="CIO"
             value={filters.CIO}
             onChange={handleInputChange}
-            placeholder="CIO"
-            style={{padding: 8, borderRadius: 6, border: '1px solid #ccc', minWidth: 120}}
-          />
-          <input
-            type="text"
-            name="ResourceType"
-            value={filters.ResourceType}
+            style={{ padding: 8, borderRadius: 6, border: '1px solid #ccc', minWidth: 120 }}
+          >
+            <option value="">Select CIO</option>
+            {cioOptions.map((cio) => (
+              <option key={cio} value={cio}>{cio}</option>
+            ))}
+          </select>
+          <select
+            name="Feature"
+            value={filters.Feature}
             onChange={handleInputChange}
-            placeholder="Resource Type"
-            style={{padding: 8, borderRadius: 6, border: '1px solid #ccc', minWidth: 120}}
-          />
-          <input
-            type="text"
-            name="Region"
-            value={filters.Region}
+            style={{ padding: 8, borderRadius: 6, border: '1px solid #ccc', minWidth: 120 }}
+          >
+            <option value="">Select Feature</option>
+            {featureOptions.map((feature) => (
+              <option key={feature} value={feature}>{feature}</option>
+            ))}
+          </select>
+          <select
+            name="Lab"
+            value={filters.Lab}
             onChange={handleInputChange}
-            placeholder="Region"
-            style={{padding: 8, borderRadius: 6, border: '1px solid #ccc', minWidth: 120}}
-          />
+            style={{ padding: 8, borderRadius: 6, border: '1px solid #ccc', minWidth: 120 }}
+          >
+            <option value="">Select Lab</option>
+            {labOptions.map((lab) => (
+              <option key={lab} value={lab}>{lab}</option>
+            ))}
+          </select>
           <input
             type="number"
             name="TotalCost"
             value={filters.TotalCost}
             onChange={handleInputChange}
             placeholder="Max Total Cost"
-            style={{padding: 8, borderRadius: 6, border: '1px solid #ccc', minWidth: 120}}
+            style={{ padding: 8, borderRadius: 6, border: '1px solid #ccc', minWidth: 120 }}
           />
-          <button onClick={applyFilter} style={{background: '#4287f5', color: '#fff', border: 'none', borderRadius: 8, padding: '8px 18px', fontWeight: 600, fontSize: 15, cursor: 'pointer'}}>Apply</button>
-          <button onClick={clearFilters} style={{background: '#f5f7fa', color: '#4287f5', border: '1.5px solid #4287f5', borderRadius: 8, padding: '8px 18px', fontWeight: 600, fontSize: 15, cursor: 'pointer'}}>Clear</button>
+          <button onClick={applyFilter} style={{ background: '#4287f5', color: '#fff', border: 'none', borderRadius: 8, padding: '8px 18px', fontWeight: 600, fontSize: 15, cursor: 'pointer' }}>Apply</button>
+          <button onClick={clearFilters} style={{ background: '#f5f7fa', color: '#4287f5', border: '1.5px solid #4287f5', borderRadius: 8, padding: '8px 18px', fontWeight: 600, fontSize: 15, cursor: 'pointer' }}>Clear</button>
         </div>
       )}
 
@@ -555,8 +600,13 @@ function Dashboard() {
         <>
           {/* Charts Section */}
           <div className="dashboard-charts glassy-charts" style={{
-            display: 'flex', flexWrap: 'wrap', gap: 40, justifyContent: 'center', marginBottom: 40,
-            zIndex: 1, position: 'relative',
+            display: 'flex',
+            flexWrap: 'wrap', // Allows wrapping to the next row
+            justifyContent: 'center',
+            gap: 24,
+            marginBottom: 40,
+            zIndex: 1,
+            position: 'relative',
           }}>
             {/* Cloud Provider-wise Bar Chart */}
             <div style={{background: '#fff', borderRadius: 16, boxShadow: '0 4px 16px #e0e0e0', padding: 24, minWidth: 350, maxWidth: 500, height: 300, display: 'flex', flexDirection: 'column', justifyContent: 'center'}}>
@@ -652,7 +702,7 @@ function Dashboard() {
             </div>
 
             {/* CIO-wise Bar Chart */}
-            <div style={{background: 'rgba(255,255,255,0.85)', borderRadius: 16, boxShadow: '0 8px 32px #a742f5', padding: 24, minWidth: 350, maxWidth: 500, height: 300, display: 'flex', flexDirection: 'column', justifyContent: 'center', transition: 'box-shadow 0.3s'}}>
+            <div style={{background: 'rgba(255,255,255,0.85)', borderRadius: 16, boxShadow: '0 4px 16px #e0e0e0', padding: 24, minWidth: 350, maxWidth: 500, height: 300, display: 'flex', flexDirection: 'column', justifyContent: 'center', transition: 'box-shadow 0.3s'}}>
               <h3 style={{textAlign: 'center', marginBottom: 16, color: '#222'}}>CIO-wise Cost Distribution</h3>
               <Bar
                 data={{
@@ -681,6 +731,8 @@ function Dashboard() {
                 }}
               />
             </div>
+
+            
 
             {/* Region-wise Bar Chart */}
             <div style={{background: '#fff', borderRadius: 16, boxShadow: '0 4px 16px #e0e0e0', padding: 24, minWidth: 350, maxWidth: 500, height: 300, display: 'flex', flexDirection: 'column', justifyContent: 'center'}}>
@@ -801,7 +853,70 @@ function Dashboard() {
                 }}
               />
             </div>
+          
+          {/* FeatureWise Total Cost Bar Chart */}
+            <div style={{background: '#fff', borderRadius: 16, boxShadow: '0 4px 16px #e0e0e0', padding: 24, minWidth: 350, maxWidth: 500, height: 300, display: 'flex', flexDirection: 'column', justifyContent: 'center'}}>
+              <h3 style={{textAlign: 'center', marginBottom: 16, color: '#222'}}>Feature-Wise Total Cost</h3>
+              <Bar
+                data={{
+                  labels: featureCostSummary.map((f) => f.feature),
+                  datasets: [
+                    {
+                      label: "Total Cost (USD)",
+                      data: featureCostSummary.map((f) => f.cost),
+                      backgroundColor: palette,
+                    },
+                  ],
+                }}
+                options={{
+                  plugins: {
+                    legend: { display: false },
+                    tooltip: { enabled: true },
+                    title: { display: false }
+                  },
+                  responsive: true,
+                  maintainAspectRatio: false,
+                  scales: {
+                    y: { beginAtZero: true, grid: { display: false } },
+                    x: { grid: { display: false } }
+                  },
+                  layout: { padding: 10 },
+                }}
+              />
+            </div>
+
+            {/* LabWise Total Cost Bar Chart */}
+            <div style={{background: '#fff', borderRadius: 16, boxShadow: '0 4px 16px #e0e0e0', padding: 24, minWidth: 350, maxWidth: 500, height: 300, display: 'flex', flexDirection: 'column', justifyContent: 'center'}}>
+              <h3 style={{textAlign: 'center', marginBottom: 16, color: '#222'}}>Lab-Wise Total Cost</h3>
+              <Bar
+                data={{
+                  labels: labCostSummary.map((l) => l.lab),
+                  datasets: [
+                    {
+                      label: "Total Cost (USD)",
+                      data: labCostSummary.map((l) => l.cost),
+                      backgroundColor: palette,
+                    },
+                  ],
+                }}
+                options={{
+                  plugins: {
+                    legend: { display: false },
+                    tooltip: { enabled: true },
+                    title: { display: false }
+                  },
+                  responsive: true,
+                  maintainAspectRatio: false,
+                  scales: {
+                    y: { beginAtZero: true, grid: { display: false } },
+                    x: { grid: { display: false } }
+                  },
+                  layout: { padding: 10 },
+                }}
+              />
+            </div>
           </div>
+            
 
           {/* Resource Table */}
           <h2 style={{marginTop: 32, textAlign: 'center', color: '#fff', letterSpacing: 1, fontWeight: 700, textShadow: '0 2px 8px #111'}}>Resource Details</h2>
@@ -831,6 +946,8 @@ function Dashboard() {
                   <th style={{padding: 12, borderBottom: '2px solid #333'}}>Cloud Provider</th>
                   <th style={{padding: 12, borderBottom: '2px solid #333'}}>Environment</th> 
                   <th style={{padding: 12, borderBottom: '2px solid #333'}}>CIO</th>
+                  <th style={{padding: 12, borderBottom: '2px solid #333'}}>Feature</th>
+                  <th style={{padding: 12, borderBottom: '2px solid #333'}}>Lab</th>
                   <th style={{padding: 12, borderBottom: '2px solid #333'}}>Resource Name</th>
                   <th style={{padding: 12, borderBottom: '2px solid #333'}}>Resource Type</th>
                   <th style={{padding: 12, borderBottom: '2px solid #333'}}>Region</th>
@@ -863,6 +980,8 @@ function Dashboard() {
                     <td style={{padding: 10, borderBottom: '1px solid #333', color: '#111', wordBreak: 'break-word', whiteSpace: 'pre-wrap'}}>{r.CloudProvider}</td>
                     <td style={{padding: 10, borderBottom: '1px solid #333', color: '#111', wordBreak: 'break-word', whiteSpace: 'pre-wrap'}}>{r.Environment}</td>
                     <td style={{padding: 10, borderBottom: '1px solid #333', color: '#111', wordBreak: 'break-word', whiteSpace: 'pre-wrap'}}>{r.CIO}</td>
+                    <td style={{padding: 10, borderBottom: '1px solid #333', color: '#111', wordBreak: 'break-word', whiteSpace: 'pre-wrap'}}>{r.Feature}</td>
+                    <td style={{padding: 10, borderBottom: '1px solid #333', color: '#111', wordBreak: 'break-word', whiteSpace: 'pre-wrap'}}>{r.Lab}</td>
                     <td style={{padding: 10, borderBottom: '1px solid #333', color: '#111', wordBreak: 'break-word', whiteSpace: 'pre-wrap'}}>{r.ResourceName}</td>
                     <td style={{padding: 10, borderBottom: '1px solid #333', color: '#111', wordBreak: 'break-word', whiteSpace: 'pre-wrap'}}>{r.ResourceType}</td>
                     <td style={{padding: 10, borderBottom: '1px solid #333', color: '#111', wordBreak: 'break-word', whiteSpace: 'pre-wrap'}}>{r.Region}</td>
@@ -1003,8 +1122,6 @@ body, .App {
   transition: box-shadow 0.3s, transform 0.3s;
 }
 .dashboard-charts > div:hover {
-  box-shadow: 0 16px 48px 0 rgba(66,135,245,0.18), 0 2px 16px 0 rgba(167,66,245,0.10);
-  transform: translateY(-6px) scale(1.025);
   z-index: 2;
 }
 @keyframes glassyFadeIn {

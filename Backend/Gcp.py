@@ -34,6 +34,10 @@ import os
 from pathlib import Path
 import json
 from google.cloud import asset_v1
+import sys
+import io
+sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
+
 
 parser = argparse.ArgumentParser(description="GCP Resource Optimization Script")
 parser.add_argument("--client_email", required=True, help="GCP Service Account Client Email (for authentication)")
@@ -45,12 +49,12 @@ args = parser.parse_args()
 PROJECT_ID = args.project_id
 USER_EMAIL = args.user_email # Use the email from command line consistently
 
-print("🚀 GCP Resource Optimization Analysis")
-print("=" * 80)
+print(" GCP Resource Optimization Analysis")
+
 print(f"Project to Analyze: {PROJECT_ID}")
 print(f"Configuration for User Email: {USER_EMAIL}")
 print(f"Authenticating with Service Account: {args.client_email}")
-print("=" * 80)
+
 
 try:
     pk_string = args.private_key.replace('\\n', '\n')
@@ -63,10 +67,10 @@ try:
     }
     # Create a single, reusable credentials object from the arguments
     gcp_credentials = service_account.Credentials.from_service_account_info(credentials_info)
-    print("✅ Authentication successful. Credentials object created.")
+    print("Authentication successful. Credentials object created.")
 
 except Exception as e:
-    print(f"❌ Critical Error: Failed to create credentials from arguments. Please check your inputs. Error: {e}")
+    print(f" Critical Error: Failed to create credentials from arguments. Please check your inputs. Error: {e}")
     exit(1) # Exit if authentication fails
 
 # Initialize the global compute client with the new credentials
@@ -78,7 +82,7 @@ try:
     MONGODB_AVAILABLE = True
 except ImportError:
     MONGODB_AVAILABLE = False
-    print("⚠️  pymongo not available. Install with: pip install pymongo")
+    print("pymongo not available. Install with: pip install pymongo")
 
 # ================================================================================
 # CONFIGURATION
@@ -111,7 +115,7 @@ def get_thresholds_from_mongodb(email, collection_name="thresholds"):
     }
 
     if not MONGODB_AVAILABLE:
-        print("⚠️ pymongo not available. Using default thresholds.")
+        print(" pymongo not available. Using default thresholds.")
         return defaults
 
     try:

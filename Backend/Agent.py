@@ -5,10 +5,11 @@ from pymongo import MongoClient
 from azure.identity import ClientSecretCredential
 from azure.keyvault.secrets import SecretClient
 import json
-
 from dotenv import load_dotenv
 import os
 from cryptography.fernet import Fernet
+from google.cloud import secretmanager
+from google.oauth2 import service_account
 
 
 # === STEP 1: Conditionally write key to .env ===
@@ -67,12 +68,14 @@ triggers_collection = client[db_name][triggers_collection_name]
 Enviroment_Collection = client[db_name][env_collection_name]
 
 def fetch_credentials(mongo_uri, db_name, collection_name, email_to_find, cloud_name, managementUnit_Id, vault_name, secret_name):
-    vault_url = f"https://{vault_name}.vault.azure.net/"
-
+    
+    
+    # Connect to MongoDB
     client = MongoClient(mongo_uri)
     db = client[db_name]
     collection = db[collection_name]
 
+    # Query the collection
     record = collection.find_one({
         "email": email_to_find,
         "cloudName": cloud_name,
@@ -80,32 +83,67 @@ def fetch_credentials(mongo_uri, db_name, collection_name, email_to_find, cloud_
     })
 
     if record:
-        tenant_id = record['rootId']
+        if cloud_name == 'Azure':
+            vault_url = f"https://{vault_name}.vault.azure.net/"
+            tenant_id = record['rootId']
 
-        # Decrypt client_id (srvaccntName)
-        encrypted_client_id = record['srvaccntName']
-        try:
-            client_id = fernet.decrypt(encrypted_client_id.encode()).decode()
-        except Exception as e:
-            raise ValueError(f"Decryption failed for client_id: {str(e)}")
+            # Decrypt client_id (srvaccntName)
+            encrypted_client_id = record['srvaccntName']
+            try:
+                client_id = fernet.decrypt(encrypted_client_id.encode()).decode()
+            except Exception as e:
+                raise ValueError(f"Decryption failed for client_id: {str(e)}")
 
-        # Decrypt client_secret (srvacctPass)
-        encrypted_secret = record['srvacctPass']
-        try:
-            client_secret = fernet.decrypt(encrypted_secret.encode()).decode()
-        except Exception as e:
-            raise ValueError(f"Decryption failed for client_secret: {str(e)}")
+            # Decrypt client_secret (srvacctPass)
+            encrypted_secret = record['srvacctPass']
+            try:
+                client_secret = fernet.decrypt(encrypted_secret.encode()).decode()
+            except Exception as e:
+                raise ValueError(f"Decryption failed for client_secret: {str(e)}")
 
-        credential = ClientSecretCredential(tenant_id, client_id, client_secret)
-        kv_client = SecretClient(vault_url=vault_url, credential=credential)
-        secret_value = kv_client.get_secret(secret_name).value
-        secret_value = secret_value.replace('\\"', '"').replace("'", "")
+            credential = ClientSecretCredential(tenant_id, client_id, client_secret)
+            kv_client = SecretClient(vault_url=vault_url, credential=credential)
+            secret_value = kv_client.get_secret(secret_name).value
+            secret_value = secret_value.replace('\\"', '"').replace("'", "")
 
-        secret_json = json.loads(secret_value)
-        username = secret_json.get("username")
-        password = secret_json.get("password")
+            secret_json = json.loads(secret_value)
+            username = secret_json.get("username")
+            password = secret_json.get("password")
 
-        return username, password
+            return username, password
+        
+        elif cloud_name == 'GCP':
+            # Step 1: Authenticate using a local JSON key with Secret Manager access
+            AUTH_JSON_PATH = "Creds//pro-plasma-465515-k1-273ccacfba4c.json"  # 🔒 This key must have secretAccessor role
+            if not os.access(AUTH_JSON_PATH, os.R_OK):
+                print("No GCP Creds file found")
+
+            credentials = service_account.Credentials.from_service_account_file(AUTH_JSON_PATH)
+
+            # Step 2: Initialize Secret Manager client
+            client = secretmanager.SecretManagerServiceClient(credentials=credentials)
+
+            # Step 3: Define secret name
+            project_id = managementUnit_Id
+            #secret_id = "mygcpvaultreader1-json"
+            version_id = "latest"
+            #my-gcpsrv1
+            secret_name = f"projects/{project_id}/secrets/{secret_name}/versions/latest"
+ 
+            # Step 4: Access the secret payload
+            response = client.access_secret_version(request={"name": secret_name})
+            secret_payload = response.payload.data.decode("UTF-8")
+
+            # Step 5: Parse and use the service account JSON key
+            service_account_credentials = json.loads(secret_payload)
+            creds = service_account_credentials
+            client_email = creds.get("client_email")
+            private_key= creds.get("private_key")
+            project_id = creds.get("project_id")
+          
+    
+            return project_id,client_email,private_key
+
     else:
         raise ValueError(f"No record found for email: {email_to_find}")
 
@@ -158,39 +196,42 @@ try:
                             vault_name = Environment.get('vaultname')
                             secret_name = Environment.get('secretname')
                             email_to_find = Environment.get('email')
-                            username, password = fetch_credentials(mongo_uri, db_name, env_collection_name, email_to_find, cloud_name,managementUnit_Id,  vault_name, secret_name)
                             #print(f"Username: {username}")
                             #print(f"Password: {password}")
                             
                             if cloud_name == 'Azure':
 
-                                # Send the Data
+                               
                           
-                                print(f"   🔵 Running Azure script")
+                                print(f" 🔵 Running Azure script")
+                                
+                                # Send the Data
+                                username, password = fetch_credentials(mongo_uri, db_name, env_collection_name, email_to_find, cloud_name,managementUnit_Id,  vault_name, secret_name)
+                           
                               
                                 cmd = [
                                         "python", "Azure.py",
                                         "--client_id", username,
                                         "--client_secret", password,
-                                        "--tenant_id", tenant_id,
                                         "--subscription_id", managementUnit_Id,
-                                        "--email", email_to_find
+                                        "--email", email_to_find,
+                                        "--tenant_id", tenant_id,
                                     ]
-                                print(tenant_id)
-                                print(managementUnit_Id)
-                                print(username)
-                                print(password)
+                              
                                 result = subprocess.run(cmd, capture_output=True, text=True)
                                 
                             elif cloud_name == 'GCP':
                                 print(f"   🟡 Running GCP script")
+                                
+                                # Send the Data
+                                project_id, client_email,private_key = fetch_credentials(mongo_uri, db_name, env_collection_name, email_to_find, cloud_name,managementUnit_Id,  vault_name, secret_name)
+                           
                                 cmd = [
-                                        "python", "Azure.py",
-                                        "--client_id", username,
-                                        "--client_secret", password,
-                                        "--tenant_id", tenant_id,
-                                        "--subscription_id", managementUnit_Id,
-                                        "--email", email_to_find
+                                        "python", "Gcp.py",
+                                        "--client_email", client_email,
+                                        "--private_key", private_key,
+                                        "--project_id", project_id,
+                                        "--user_email", email_to_find
                                     ]
                                 result = subprocess.run(cmd, capture_output=True, text=True)
                                 print(result.stdout)

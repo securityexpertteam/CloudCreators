@@ -1,102 +1,612 @@
-.standard-config-container {
-  max-width: 600px;
-  margin: 32px auto;
-  background: #fff;
-  border-radius: 12px;
-  box-shadow: 0 2px 12px rgba(0,0,0,0.07);
-  padding: 32px 24px;
+body, html {
+  margin: 0;
+  padding: 0;
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  background: linear-gradient(120deg, #232526 0%, #414345 100%);
+  min-height: 100vh;
+  color: #1a1a1a;
 }
 
-.type-checkboxes {
+/* Make the main page scrollbar bigger and more visible */
+html::-webkit-scrollbar, body::-webkit-scrollbar {
+  width: 16px;
+  background: #f1f1f1;
+}
+
+html::-webkit-scrollbar-thumb, body::-webkit-scrollbar-thumb {
+  background: #bdbdbd;
+  border-radius: 8px;
+  border: 3px solid #f1f1f1;
+}
+
+html::-webkit-scrollbar-thumb:hover, body::-webkit-scrollbar-thumb:hover {
+  background: #888;
+}
+
+/* For Firefox */
+html, body {
+  scrollbar-width: thick;
+  scrollbar-color: #bdbdbd #f1f1f1;
+}
+
+.App {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  position: relative;
+  z-index: 2; /* ensure above background */
+}
+
+/* Heading */
+h1 {
+  font-size: 2.4rem;
+  font-weight: 700;
+  margin-bottom: 0.4rem;
+  color: #040f1a;
+}
+
+.subtitle {
+  font-size: 1.1rem;
+  color: #5f6c7b;
+  margin-bottom: 2.5rem;
+}
+
+/* Glassy animated background for all pages */
+.glassy-anim-bg {
+  position: fixed !important;
+  top: 0; left: 0; width: 100vw; height: 100vh;
+  z-index: 0; /* background layer */
+  pointer-events: none;
+  overflow: hidden;
+  background: linear-gradient(120deg, #232526 0%, #414345 100%);
+}
+.glassy-anim-bg svg {
+  filter: blur(8px) saturate(1.2);
+  opacity: 0.95;
+}
+
+/* Glassy card style for config card */
+.config-card {
+  background: rgba(255,255,255,0.96);
+  padding: 2rem;
+  border-radius: 18px;
+  box-shadow: 0 12px 32px rgba(31,38,135,0.12), 0 2px 8px rgba(67,206,162,0.10);
+  backdrop-filter: blur(12px) saturate(1.1);
+  -webkit-backdrop-filter: blur(12px) saturate(1.1);
+  animation: glassyFadeIn 1.2s cubic-bezier(.4,2,.6,1);
+  z-index: 3; /* ensure above .App and background */
+}
+
+/* Inputs */
+.input-row {
   display: flex;
   flex-wrap: wrap;
-  gap: 16px;
-  margin-top: 8px;
+  gap: 1.5rem;
+  margin-bottom: 2rem;
 }
 
-.type-checkbox-label {
-  font-weight: 500;
-  margin-right: 16px;
-}
-
-.config-section {
-  margin-bottom: 32px;
-  padding: 16px 0;
-  border-bottom: 1px solid #eee;
-}
-
-.field {
-  margin-bottom: 18px;
+.input-field {
+  flex: 1;
   display: flex;
   flex-direction: column;
 }
 
-input[type="text"], input[type="number"], select {
-  padding: 8px 10px;
-  border: 1px solid #bbb;
-  border-radius: 5px;
-  margin-top: 4px;
+.input-field label {
+  font-weight: 600;
+  color: #344054;
+  margin-bottom: 0.5rem;
+}
+
+.input-field input,
+.input-field select {
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid #d0d5dd;
+  background-color: #f9fafb;
+  font-size: 15px;
+  transition: border 0.3s ease;
+}
+
+.input-field input:focus,
+.input-field select:focus {
+  border-color: #26D0CE;
+  box-shadow: 0 2px 8px rgba(38,208,206,0.13);
+  background: rgba(255,255,255,0.98);
+}
+
+/* Toggles */
+.toggle-options {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  margin-top: 1.5rem;
+  margin-bottom: 1.5rem;
+  padding: 1rem;
+  background-color: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.5rem;
+}
+
+.toggle-label {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  font-size: 1rem;
+  color: #374151;
+}
+
+.toggle-label span {
+  font-weight: 600;
+}
+
+/* Enhanced Button Group */
+.button-group {
+  display: flex;
+  justify-content: center;
+  gap: 1.5rem;
+  margin-bottom: 2rem;
+  background: #f0f4ff;
+  padding: 0.6rem 0;
+  border-radius: 14px;
+  box-shadow: 0 2px 8px rgba(36, 86, 231, 0.04);
+}
+
+/* Common Button Style */
+button {
+  padding: 10px 24px;
+  font-size: 1.07rem;
+  font-weight: 600;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  transition:
+    background-color 0.2s,
+    color 0.2s,
+    box-shadow 0.2s,
+    transform 0.1s;
+  box-shadow: 0 2px 8px rgba(36, 86, 231, 0.08);
+  outline: none;
+}
+
+/* Selected/Primary Button */
+.primary-btn {
+  background-color: #2563eb;
+  color: white;
+  box-shadow: 0 4px 16px rgba(36, 86, 231, 0.12);
+  border: 2px solid #1d4ed8;
+  transform: scale(1.05);
+  z-index: 1;
+}
+
+.primary-btn:hover,
+.primary-btn:focus {
+  background-color: #1d4ed8;
+  box-shadow: 0 6px 24px rgba(36, 86, 231, 0.15);
+  transform: scale(1.07);
+}
+
+/* Not Selected/Secondary Button */
+.secondary-btn {
+  background: white;
+  color: #2563eb;
+  border: 2px solid #d0d5dd;
+  box-shadow: 0 1px 4px rgba(36, 86, 231, 0.04);
+}
+
+.secondary-btn:hover,
+.secondary-btn:focus {
+  background-color: #e7f0ff;
+  color: #1d4ed8;
+  border-color: #2563eb;
+  transform: scale(1.04);
+  box-shadow: 0 2px 8px rgba(36, 86, 231, 0.09);
+}
+
+/* Executive hover effect for buttons */
+button,
+.primary-btn,
+.secondary-btn {
+  transition: box-shadow 0.3s, border 0.3s, background 0.3s;
+  box-shadow: 0 2px 8px rgba(31,38,135,0.10);
+  border-radius: 10px;
+}
+
+button:hover,
+.primary-btn:hover,
+.secondary-btn:hover {
+  box-shadow: 0 8px 24px rgba(66,135,245,0.18), 0 2px 16px rgba(167,66,245,0.10);
+  background: linear-gradient(90deg, #4287f5 0%, #26D0CE 100%);
+  filter: brightness(1.05) saturate(1.08);
+}
+
+/* Message */
+.App p {
+  margin-top: 1.5rem;
+  color: #16a34a;
+  font-weight: 500;
+}
+
+/* Table */
+table {
+  width: 100%;
+  max-width: 900px;
+  margin-top: 2rem;
+  border-collapse: collapse;
+  background-color: #ffffff;
+  border-radius: 10px;
+  overflow: hidden;
+  box-shadow: 0 6px 12px rgba(0, 0, 0, 0.05);
+}
+
+th, td {
+  padding: 14px;
+  border: 1px solid #e0e6ed;
+  text-align: center;
   font-size: 15px;
 }
 
-input[type="checkbox"] {
-  margin-right: 8px;
-}
-
-.checkbox-field {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-top: 4px;
-}
-
-.previous-value {
-  font-size: 12px;
-  color: #888;
-  margin-left: 8px;
-}
-
-.standard-config-save-btn {
-  background: #0078d4;
-  color: #fff;
-  border: none;
-  padding: 10px 28px;
-  border-radius: 6px;
-  font-size: 16px;
+th {
+  background-color: #f1f5f9;
   font-weight: 600;
-  cursor: pointer;
-  margin-top: 12px;
-  transition: background 0.2s;
+  color: #1e293b;
 }
 
-.standard-config-save-btn:hover {
-  background: #005fa3;
+tr:nth-child(even) {
+  background-color: #f9fafb;
 }
 
-.field {
-  margin-bottom: 18px;
-  display: flex;
-  flex-direction: column;
-}
-
-.checkbox-field {
+/* Dashboard glassy background */
+.dashboard-bg {
+  min-height: 100vh;
+  width: 100vw;
+  background: linear-gradient(120deg, #232526 0%, #414345 100%);
   display: flex;
   align-items: center;
-  gap: 8px;
-  margin-top: 4px;
-  /* Add this for better vertical alignment */
-  min-height: 32px;
+  justify-content: center;
 }
 
-.checkbox-field input[type="checkbox"] {
-  margin: 0 8px 0 0;
+.dashboard-center {
+  width: 100vw;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.dashboard-card.glassy-card {
+  background: rgba(255,255,255,0.96);
+  padding: 2.5rem 2rem;
+  border-radius: 18px;
+  box-shadow: 0 12px 32px rgba(31,38,135,0.12), 0 2px 8px rgba(67,206,162,0.10);
+  backdrop-filter: blur(12px) saturate(1.1);
+  -webkit-backdrop-filter: blur(12px) saturate(1.1);
+  animation: glassyFadeIn 1.2s cubic-bezier(.4,2,.6,1);
+  max-width: 800px;
+  width: 100%;
+}
+
+.dashboard-card.glassy-card.white-bg {
+  background: #fff;
+  padding: 2.5rem 2rem;
+  border-radius: 18px;
+  box-shadow: 0 8px 24px rgba(31,38,135,0.10), 0 2px 8px rgba(67,206,162,0.08);
+  max-width: 800px;
+  width: 100%;
+  border: 1.5px solid #e0e6ed;
+  /* No hover effect */
+}
+
+.dashboard-title {
+  font-size: 2.2rem;
+  font-weight: 700;
+  margin-bottom: 0.8rem;
+  color: #040f1a;
+  text-align: center;
+}
+
+.dashboard-section {
+  margin-bottom: 1.5rem;
+}
+
+.dashboard-type-checkboxes {
+  display: flex;
+  gap: 1.2rem;
+  flex-wrap: wrap;
+  margin-top: 0.5rem;
+}
+
+.dashboard-type-checkbox-label {
+  font-size: 1.1rem;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.dashboard-config-section {
+  margin-bottom: 2rem;
+}
+
+.dashboard-section-title {
+  font-size: 1.3rem;
+  font-weight: 600;
+  margin-bottom: 1rem;
+  color: #1e293b;
+}
+
+.dashboard-fields-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.2rem 2rem;
+}
+
+.dashboard-field {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.dashboard-field-label {
+  font-size: 1rem;
+  font-weight: 500;
+  min-width: 180px;
+}
+
+.dashboard-input,
+.dashboard-select {
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: 1px solid #e0e6ed;
+  font-size: 1rem;
+  background: #f8fafc;
+  transition: box-shadow 0.2s, border 0.2s;
+}
+
+.dashboard-input:focus,
+.dashboard-select:focus {
+  box-shadow: 0 0 0 2px #4287f5;
+  outline: none;
+  border-color: #4287f5;
+}
+
+.dashboard-checkbox {
   width: 18px;
   height: 18px;
+  accent-color: #4287f5;
 }
 
-.checkbox-field label,
-.checkbox-field .previous-value {
-  margin: 0;
-  font-size: 15px;
-  font-weight: 400;
+.dashboard-save-btn {
+  margin-top: 2rem;
+  padding: 0.7rem 2.2rem;
+  font-size: 1.1rem;
+  font-weight: 600;
+  background: linear-gradient(90deg, #4287f5 0%, #7f53ac 100%);
+  color: #fff;
+  border: none;
+  border-radius: 10px;
+  box-shadow: 0 2px 8px rgba(31,38,135,0.08);
+  cursor: pointer;
+  transition: background 0.2s, box-shadow 0.2s;
+}
+
+.dashboard-save-btn:hover {
+  background: linear-gradient(90deg, #7f53ac 0%, #4287f5 100%);
+  box-shadow: 0 4px 12px rgba(67,206,162,0.10);
+}
+
+/* Sign-in background */
+.signin-bg {
+  min-height: 100vh;
+  width: 100vw;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.signin-center {
+  width: 100vw;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.signin-card {
+  background: #fff;
+  border-radius: 12px;
+  border: 1.5px solid #e0e6ed;
+  width: 900px;
+  max-width: 98vw;
+  min-height: 420px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  padding: 0;
+}
+
+.signin-card-content {
+  width: 100%;
+  padding: 2rem 2.5rem;
+  box-sizing: border-box;
+}
+
+.signin-title {
+  font-size: 2rem;
+  font-weight: 700;
+  margin-bottom: 1.2rem;
+  color: #2d3e50;
+  text-align: center;
+}
+
+.signin-section {
+  margin-bottom: 1.5rem;
+}
+
+.signin-type-checkboxes {
+  display: flex;
+  gap: 1.2rem;
+  flex-wrap: wrap;
+  margin-top: 0.5rem;
+}
+
+.signin-type-checkbox-label {
+  font-size: 1.1rem;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.signin-config-section {
+  margin-bottom: 2rem;
+}
+
+.signin-section-title {
+  font-size: 1.15rem;
+  font-weight: 600;
+  margin-bottom: 1rem;
+  color: #1e293b;
+}
+
+.signin-fields-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.2rem 2rem;
+}
+
+.signin-field {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.signin-field-label {
+  font-size: 1rem;
+  font-weight: 500;
+  min-width: 180px;
+}
+
+.signin-input,
+.signin-select {
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: 1px solid #e0e6ed;
+  font-size: 1rem;
+  background: #f8fafc;
+  transition: box-shadow 0.2s, border 0.2s;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.signin-input:focus,
+.signin-select:focus {
+  box-shadow: 0 0 0 2px #4287f5;
+  outline: none;
+  border-color: #4287f5;
+}
+
+.signin-checkbox {
+  width: 18px;
+  height: 18px;
+  accent-color: #4287f5;
+}
+
+.signin-save-btn {
+  background: linear-gradient(90deg, #4287f5 0%, #7f53ac 100%);
+  color: #fff;
+  border: none;
+  border-radius: 10px;
+  padding: 10px 28px;
+  font-size: 1.1rem;
+  font-weight: 600;
+  cursor: pointer;
+  margin-top: 2rem;
+  margin-bottom: 0.5rem;
+  transition: background 0.2s, box-shadow 0.2s, transform 0.1s, backdrop-filter 0.2s;
+  background-clip: padding-box;
+  box-shadow: 0 4px 24px rgba(66,135,245,0.12), 0 2px 8px rgba(167,66,245,0.10);
+  backdrop-filter: blur(6px) saturate(1.2);
+  -webkit-backdrop-filter: blur(6px) saturate(1.2);
+  opacity: 0.98;
+}
+
+.signin-save-btn:hover,
+.signin-save-btn:focus {
+  background: linear-gradient(90deg, #7f53ac 0%, #4287f5 100%);
+  box-shadow: 0 8px 32px rgba(66,135,245,0.18), 0 2px 16px rgba(167,66,245,0.12);
+  filter: brightness(1.05) saturate(1.08);
+  opacity: 1;
+}
+
+.signin-save-btn:active {
+  background: linear-gradient(90deg, #a742f5 0%, #4287f5 100%);
+  box-shadow: 0 2px 8px rgba(167, 66, 245, 0.12);
+  opacity: 0.96;
+}
+
+/* Glassy fade-in animation */
+@keyframes glassyFadeIn {
+  0% { opacity: 0; transform: translateY(40px) scale(0.98); }
+  100% { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+/* Responsive for mobile */
+@media (max-width: 900px) {
+  .dashboard-card.glassy-card {
+    padding: 1.2rem 0.5rem;
+    max-width: 98vw;
+  }
+  .dashboard-fields-grid {
+    grid-template-columns: 1fr;
+    gap: 1rem;
+  }
+  .dashboard-field-label {
+    min-width: 120px;
+  }
+  .dashboard-card.glassy-card.white-bg {
+    padding: 1.2rem 0.5rem;
+    max-width: 98vw;
+  }
+  .dashboard-fields-grid {
+    grid-template-columns: 1fr;
+    gap: 1rem;
+  }
+  .dashboard-field-label {
+    min-width: 120px;
+  }
+}
+
+@media (max-width: 600px) {
+  .signin-card {
+    width: 98vw;
+    min-height: 0;
+    border-radius: 8px;
+  }
+  .signin-card-content {
+    padding: 1rem 0.5rem;
+    max-height: 90vh;
+  }
+  .signin-field-label {
+    min-width: 100px;
+  }
+}
+
+@media (max-width: 1000px) {
+  .signin-card {
+    width: 98vw;
+    min-height: 0;
+    border-radius: 8px;
+    padding: 0;
+  }
+  .signin-card-content {
+    padding: 1rem 0.5rem;
+  }
+  .signin-fields-grid {
+    grid-template-columns: 1fr;
+    gap: 1rem;
+  }
+  .signin-field-label {
+    min-width: 100px;
+  }
 }
