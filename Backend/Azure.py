@@ -370,10 +370,10 @@ def analyze_azure_resources():
         if missing_tags:
             formatted_resource["TotalCost"] = 0 if total_cost == "Unknown" else total_cost
             formatted_resource["Finding"] = "Untagged resource"
-            formatted_resource["MissingTags"] = ", ".join(missing_tags)
+            formatted_resource["MissingTags"] = "; ".join(missing_tags)
             formatted_resource["Recommendation"] = "Add Tag"
             underutilized_resources.append(formatted_resource)
-            print(f"[UNTAGGED] Resource: {resource.name} - Missing tags: {', '.join(missing_tags)}")
+            print(f"[UNTAGGED] Resource: {resource.name} - Missing tags: {'; '.join(missing_tags)}")
             continue
 
     # --- Subnet analysis ---
@@ -751,3 +751,4 @@ def analyze_azure_resources():
 
 if __name__ == "__main__":
     analyze_azure_resources()
+
