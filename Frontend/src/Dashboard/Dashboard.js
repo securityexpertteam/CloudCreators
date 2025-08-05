@@ -915,6 +915,76 @@ function Dashboard() {
                 }}
               />
             </div>
+
+            {/* Recommendation-wise Total Cost Bar Chart for Untagged Resources*/}
+            <div style={{background: '#fff', borderRadius: 16, boxShadow: '0 4px 16px #e0e0e0', padding: 24, minWidth: 350, maxWidth: 500, height: 300, display: 'flex', flexDirection: 'column', justifyContent: 'center'}}>
+              <h3 style={{textAlign: 'center', marginBottom: 16, color: '#222'}}>Recommendation: Add Tag - Total Cost</h3>
+              <Bar
+                data={{
+                  labels: filteredResources
+                    .filter((r) => r.Recommendation && r.Recommendation.includes('Add Tag'))
+                    .map((r) => r.ResourceType),
+                  datasets: [
+                    {
+                      label: "Total Cost (USD)",
+                      data: filteredResources
+                        .filter((r) => r.Recommendation && r.Recommendation.includes('Add Tag'))
+                        .map((r) => parseFloat(r.TotalCost) || 0),
+                      backgroundColor: palette,
+                    },
+                  ],
+                }}
+                options={{
+                  plugins: {
+                    legend: { display: false },
+                    tooltip: { enabled: true },
+                    title: { display: false }
+                  },
+                  responsive: true,
+                  maintainAspectRatio: false,
+                  scales: {
+                    y: { beginAtZero: true, grid: { display: false } },
+                    x: { grid: { display: false } }
+                  },
+                  layout: { padding: 10 },
+                }}
+              />
+            </div>
+
+            {/* Recommendation-wise Total Cost Bar Chart for 'Orphan' */}
+            <div style={{background: '#fff', borderRadius: 16, boxShadow: '0 4px 16px #e0e0e0', padding: 24, minWidth: 350, maxWidth: 500, height: 300, display: 'flex', flexDirection: 'column', justifyContent: 'center'}}>
+              <h3 style={{textAlign: 'center', marginBottom: 16, color: '#222'}}>Recommendation: Orphan - Total Cost</h3>
+              <Bar
+                data={{
+                  labels: filteredResources
+                    .filter((r) => r.Recommendation && r.Recommendation.includes('Orphan'))
+                    .map((r) => r.ResourceType),
+                  datasets: [
+                    {
+                      label: "Total Cost (USD)",
+                      data: filteredResources
+                        .filter((r) => r.Recommendation && r.Recommendation.includes('Orphan'))
+                        .map((r) => parseFloat(r.TotalCost) || 0),
+                      backgroundColor: palette,
+                    },
+                  ],
+                }}
+                options={{
+                  plugins: {
+                    legend: { display: false },
+                    tooltip: { enabled: true },
+                    title: { display: false }
+                  },
+                  responsive: true,
+                  maintainAspectRatio: false,
+                  scales: {
+                    y: { beginAtZero: true, grid: { display: false } },
+                    x: { grid: { display: false } }
+                  },
+                  layout: { padding: 10 },
+                }}
+              />
+            </div>
           </div>
             
 
