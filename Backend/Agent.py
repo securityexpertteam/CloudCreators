@@ -6,6 +6,53 @@ from azure.identity import ClientSecretCredential
 from azure.keyvault.secrets import SecretClient
 import json
 
+from dotenv import load_dotenv
+import os
+from cryptography.fernet import Fernet
+
+
+# === STEP 1: Conditionally write key to .env ===
+def append_key_to_env(env_file=".env", env_key="fernet_key"):
+    load_dotenv(dotenv_path=env_file)
+    existing_key = os.environ.get(env_key)
+
+    if existing_key:
+        print(f"✅ Key '{env_key}' already exists in {env_file}.")
+        return existing_key.encode()
+
+    new_key = Fernet.generate_key().decode()
+
+    with open(env_file, "a") as file:
+        file.write(f"{env_key}={"'"+new_key+"'"}\n")
+
+    print(f"🆕 Fernet key appended to {env_file} as '{env_key}'")
+    return new_key.encode()
+
+# === STEP 2: Load key from env ===
+def load_key_from_env(env_key="fernet_key"):
+    load_dotenv()
+    key = os.environ.get(env_key)
+    if not key:
+        raise ValueError(f"⚠️ Key '{env_key}' not found in environment")
+    return key.encode()
+
+# === STEP 3: Encrypt ===
+def encrypt_message(message: str, key: bytes) -> bytes:
+    fernet = Fernet(key)
+    return fernet.encrypt(message.encode())
+
+# === STEP 4: Decrypt ===
+def decrypt_message(token: bytes, key: bytes) -> str:
+    fernet = Fernet(key)
+    return fernet.decrypt(token).decode()
+
+
+append_key_to_env()
+# Load the .env file
+load_dotenv()
+FERNET_SECRET_KEY = os.getenv("fernet_key")
+fernet = Fernet(FERNET_SECRET_KEY)
+
 
 print("🚀 MongoDB Trigger Watcher")
 print("Database: myDB | Collection: triggers")
@@ -19,32 +66,41 @@ client = MongoClient(mongo_uri)
 triggers_collection = client[db_name][triggers_collection_name]
 Enviroment_Collection = client[db_name][env_collection_name]
 
-def fetch_credentials(mongo_uri, db_name, collection_name, email_to_find,cloud_name,managementUnit_Id,  vault_name, secret_name):
-    
-    # Construct the vault URL
+def fetch_credentials(mongo_uri, db_name, collection_name, email_to_find, cloud_name, managementUnit_Id, vault_name, secret_name):
     vault_url = f"https://{vault_name}.vault.azure.net/"
 
-    # Connect to MongoDB
     client = MongoClient(mongo_uri)
     db = client[db_name]
     collection = db[collection_name]
 
-    # Query the collection
-    record = collection.find_one({"email": email_to_find, "cloudName": cloud_name,"managementUnitId":managementUnit_Id})
+    record = collection.find_one({
+        "email": email_to_find,
+        "cloudName": cloud_name,
+        "managementUnitId": managementUnit_Id
+    })
 
     if record:
-        # Replace with actual credentials
         tenant_id = record['rootId']
-        client_id = record['srvaccntName']  # App registered with API permissions
-        client_secret = record['srvacctPass']
 
-        # --- Authenticate and fetch secret ---
+        # Decrypt client_id (srvaccntName)
+        encrypted_client_id = record['srvaccntName']
+        try:
+            client_id = fernet.decrypt(encrypted_client_id.encode()).decode()
+        except Exception as e:
+            raise ValueError(f"Decryption failed for client_id: {str(e)}")
+
+        # Decrypt client_secret (srvacctPass)
+        encrypted_secret = record['srvacctPass']
+        try:
+            client_secret = fernet.decrypt(encrypted_secret.encode()).decode()
+        except Exception as e:
+            raise ValueError(f"Decryption failed for client_secret: {str(e)}")
+
         credential = ClientSecretCredential(tenant_id, client_id, client_secret)
         kv_client = SecretClient(vault_url=vault_url, credential=credential)
         secret_value = kv_client.get_secret(secret_name).value
         secret_value = secret_value.replace('\\"', '"').replace("'", "")
 
-        # --- Parse JSON and extract fields ---
         secret_json = json.loads(secret_value)
         username = secret_json.get("username")
         password = secret_json.get("password")
@@ -103,8 +159,8 @@ try:
                             secret_name = Environment.get('secretname')
                             email_to_find = Environment.get('email')
                             username, password = fetch_credentials(mongo_uri, db_name, env_collection_name, email_to_find, cloud_name,managementUnit_Id,  vault_name, secret_name)
-                            print(f"Username: {username}")
-                            print(f"Password: {password}")
+                            #print(f"Username: {username}")
+                            #print(f"Password: {password}")
                             
                             if cloud_name == 'Azure':
 
@@ -120,9 +176,12 @@ try:
                                         "--subscription_id", managementUnit_Id,
                                         "--email", email_to_find
                                     ]
+                                print(tenant_id)
+                                print(managementUnit_Id)
+                                print(username)
+                                print(password)
                                 result = subprocess.run(cmd, capture_output=True, text=True)
-                                print(result.stdout)
-                                print(result.stderr)
+                                
                             elif cloud_name == 'GCP':
                                 print(f"   🟡 Running GCP script")
                                 cmd = [
@@ -161,4 +220,5 @@ try:
 except KeyboardInterrupt:
     print("\n⚠️ Stopped by user")
 #finally:
+
     #client.close()
