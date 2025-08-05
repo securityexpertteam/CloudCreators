@@ -921,15 +921,25 @@ function Dashboard() {
               <h3 style={{textAlign: 'center', marginBottom: 16, color: '#222'}}>Recommendation: Add Tag - Total Cost</h3>
               <Bar
                 data={{
-                  labels: filteredResources
-                    .filter((r) => r.Recommendation && r.Recommendation.includes('Add Tag'))
-                    .map((r) => r.ResourceType),
+                  labels: Object.keys(
+                    filteredResources
+                      .filter((r) => r.Recommendation && r.Recommendation.includes('Add Tag'))
+                      .reduce((acc, r) => {
+                        acc[r.ResourceType] = (acc[r.ResourceType] || 0) + parseFloat(r.TotalCost || 0);
+                        return acc;
+                      }, {})
+                  ),
                   datasets: [
                     {
                       label: "Total Cost (USD)",
-                      data: filteredResources
-                        .filter((r) => r.Recommendation && r.Recommendation.includes('Add Tag'))
-                        .map((r) => parseFloat(r.TotalCost) || 0),
+                      data: Object.values(
+                        filteredResources
+                          .filter((r) => r.Recommendation && r.Recommendation.includes('Add Tag'))
+                          .reduce((acc, r) => {
+                            acc[r.ResourceType] = (acc[r.ResourceType] || 0) + parseFloat(r.TotalCost || 0);
+                            return acc;
+                          }, {})
+                      ),
                       backgroundColor: palette,
                     },
                   ],
@@ -956,15 +966,25 @@ function Dashboard() {
               <h3 style={{textAlign: 'center', marginBottom: 16, color: '#222'}}>Finding: Orphan - Total Cost</h3>
               <Bar
                 data={{
-                  labels: filteredResources
-                    .filter((r) => r.Finding && r.Finding.includes('Orphan'))
-                    .map((r) => r.ResourceType),
+                  labels: Object.keys(
+                    filteredResources
+                      .filter((r) => r.Finding && r.Finding.includes('Orphan'))
+                      .reduce((acc, r) => {
+                        acc[r.ResourceType] = (acc[r.ResourceType] || 0) + parseFloat(r.TotalCost || 0);
+                        return acc;
+                      }, {})
+                  ),
                   datasets: [
                     {
                       label: "Total Cost (USD)",
-                      data: filteredResources
-                        .filter((r) => r.Finding && r.Finding.includes('Orphan'))
-                        .map((r) => parseFloat(r.TotalCost) || 0),
+                      data: Object.values(
+                        filteredResources
+                          .filter((r) => r.Finding && r.Finding.includes('Orphan'))
+                          .reduce((acc, r) => {
+                            acc[r.ResourceType] = (acc[r.ResourceType] || 0) + parseFloat(r.TotalCost || 0);
+                            return acc;
+                          }, {})
+                      ),
                       backgroundColor: palette,
                     },
                   ],
