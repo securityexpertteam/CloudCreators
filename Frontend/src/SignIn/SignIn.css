@@ -1,43 +1,3 @@
-/* .signin-container {
-  max-width: 400px;
-  margin: 80px auto;
-  padding: 30px;
-  box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
-  border-radius: 10px;
-  background: #fff;
-  font-family: Arial, sans-serif;
-}
-
-.signin-form {
-  display: flex;
-  flex-direction: column;
-  gap: 15px;
-}
-
-.signin-form input {
-  padding: 10px;
-  font-size: 16px;
-  border: 1px solid #ccc;
-  border-radius: 6px;
-}
-
-.signin-form button {
-  padding: 10px;
-  background-color: #007bff;
-  border: none;
-  color: white;
-  font-size: 16px;
-  border-radius: 6px;
-  cursor: pointer;
-}
-
-.signin-form button:hover {
-  background-color: #0056b3;
-} */
-
-
-
-
 /* Optional: if you want Poppins for headings only, uncomment the next line */
 /* @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@500;600&display=swap'); */
 
@@ -163,7 +123,7 @@ html, body {
 .signin-button {
   width: 100%;
   padding: 12px;
-  background: linear-gradient(90deg, var(--primary-600), var(--primary-500));
+  background: linear-gradient(90deg, #00b894 0%, #00cec9 100%);
   border: none;
   color: #fff;
   font-weight: 600;
@@ -171,6 +131,11 @@ html, body {
   cursor: pointer;
   font-size: 16px;
   transition: opacity 0.2s;
+}
+
+.signin-button:hover:enabled {
+  background: linear-gradient(90deg, #512da8, #1976d2); /* Stronger purple for contrast */
+  opacity: 0.92;
 }
 
 .signin-button:disabled {
@@ -186,4 +151,38 @@ html, body {
   padding: 10px 12px;
   border-radius: 8px;
   margin-bottom: 16px;
+}
+
+/* Add or update these styles in both SignIn.css and SignUp.css */
+
+/* Main button style */
+.signin-btn, .signup-btn {
+  background: linear-gradient(90deg, #0984e3 0%, #00b894 100%);
+  color: #fff;
+  font-weight: 700;
+  border: none;
+  border-radius: 8px;
+  padding: 12px 36px;
+  font-size: 1.08rem;
+  margin-top: 15px;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0, 190, 148, 0.10);
+  transition: background 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+
+/* Hover effect */
+.signin-btn:hover, .signup-btn:hover {
+  background: linear-gradient(90deg, #00b894 0%, #00cec9 100%);
+}
+
+/* Disabled state */
+.signin-btn:disabled, .signup-btn:disabled {
+  background: #b2bec3;
+  color: #636e72;
+  cursor: not-allowed;
+  opacity: 1;
 }
