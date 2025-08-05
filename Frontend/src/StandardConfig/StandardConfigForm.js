@@ -17,9 +17,9 @@ const CONFIG_TYPES = [
     label: "Kubernetes",
     fields: [
       { name: "k8s_node_cpu_percentage", label: "Node CPU Usage (%)", type: "percentage" },
-      { name: "k8s_node_memory_percentage", label: "Node Memory Usage (%)", type: "percentage" },
+      { name: "k8s_node_memory_percentage", label:"Node Memory Usage(%)", type: "percentage" },
       { name: "k8s_node_count", label: "Number of Nodes", type: "number" },
-      { name: "k8s_volume_percentage", label: "Persistent Volume Usage (%)", type: "percentage" },
+      { name: "k8s_volume_percentage", label:"Persistent Volume Usage (%)", type: "percentage" },
     ],
   },
   {
@@ -241,6 +241,7 @@ function StandardConfigForm() {
                 <label>
                   <b>Select Configuration Type:</b>
                 </label>
+                <div style={{ height: 16 }} />
                 <div className="signin-type-buttons">
                   {CONFIG_TYPES.map((type) => (
                     <button
@@ -275,95 +276,152 @@ function StandardConfigForm() {
                   <div key={selectedType} className="signin-config-section">
                     <h3 className="signin-section-title">{typeObj.label}</h3>
                     <div className="signin-fields-grid">
-                      {typeObj.fields.map((field) => (
-                        <div className="signin-field" key={field.name}>
-                          <label htmlFor={field.name} className="signin-field-label">
-                            {field.label}
-                            {field.type === "percentage" && " (1-100)"}
-                          </label>
-                          {field.type === "checkbox" ? (
-                            <input
-                              type="checkbox"
-                              checked={
-                                allFormValues[field.name] === true
-                              }
-                              onChange={(e) =>
-                                handleInputChange(
-                                  field.name,
-                                  e.target.checked,
-                                  field.type
-                                )
-                              }
-                              id={field.name}
-                              className="signin-checkbox"
-                            />
-                          ) : field.type === "dropdown" ? (
-                            <select
-                              value={allFormValues[field.name] !== undefined ? allFormValues[field.name] : ""}
-                              onChange={(e) =>
-                                handleInputChange(
-                                  field.name,
-                                  e.target.value,
-                                  field.type
-                                )
-                              }
-                              className="signin-select"
-                            >
-                              <option value="">
-                                {loadedConfig[field.name] !== undefined && loadedConfig[field.name] !== ""
-                                  ? `Previous: ${loadedConfig[field.name]}`
-                                  : "Select"}
-                              </option>
-                              {field.options.map((opt) => (
-                                <option key={opt} value={opt}>
-                                  {opt}
-                                </option>
-                              ))}
-                            </select>
-                          ) : (
-                            <input
-                              type="text"
-                              inputMode="numeric"
-                              pattern="[0-9]*"
-                              value={allFormValues[field.name] !== undefined ? allFormValues[field.name] : ""}
-                              placeholder={
-                                loadedConfig[field.name] !== undefined && loadedConfig[field.name] !== ""
-                                  ? loadedConfig[field.name]
-                                  : ""
-                              }
-                              min={field.type === "percentage" ? 1 : undefined}
-                              max={field.type === "percentage" ? 100 : undefined}
-                              onChange={(e) => {
-                                let val = e.target.value.replace(/[^0-9]/g, "");
-                                if (field.type === "percentage") {
-                                  if (val.length > 3) val = val.slice(0, 3);
-                                  if (val !== "" && Number(val) > 100) val = val.slice(0, val.length - 1);
-                                }
-                                setAllFormValues((prev) => ({
-                                  ...prev,
-                                  [field.name]: val,
-                                }));
-                              }}
-                              onKeyDown={(e) => {
-                                if (
-                                  ["e", "E", "+", "-", ".", ",", " "].includes(e.key) ||
-                                  (e.key.length === 1 && e.key.match(/[a-zA-Z]/))
-                                ) {
-                                  e.preventDefault();
-                                }
-                                if (
-                                  field.type === "percentage" &&
-                                  e.target.value.length >= 3 &&
-                                  !["Backspace", "Delete", "ArrowLeft", "ArrowRight", "Tab"].includes(e.key)
-                                ) {
-                                  e.preventDefault();
-                                }
-                              }}
-                              className="signin-input"
-                            />
-                          )}
-                        </div>
-                      ))}
+                      {typeObj.fields.map((field) => {
+                        const isSpecialCheckbox =
+                          ["stor_lifecycle_enabled", "gen_untagged", "gen_orphaned"].includes(field.name);
+
+                        return (
+                          <div className="signin-field" key={field.name}>
+                            {field.type === "checkbox" && isSpecialCheckbox ? (
+                              <>
+                                <input
+                                  type="checkbox"
+                                  checked={allFormValues[field.name] === true}
+                                  onChange={(e) =>
+                                    handleInputChange(field.name, e.target.checked, field.type)
+                                  }
+                                  id={field.name}
+                                  className="signin-checkbox"
+                                  style={{ marginRight: "8px" }}
+                                />
+                                <label htmlFor={field.name} className="signin-field-label" style={{ marginBottom: 0 }}>
+                                  {field.label}
+                                </label>
+                              </>
+                            ) : (
+                              <>
+                                <label htmlFor={field.name} className="signin-field-label">
+                                  {field.label}
+                                </label>
+                                {field.type === "percentage" ? (
+                                  <>
+                                    <input
+                                      type="text"
+                                      inputMode="numeric"
+                                      pattern="[0-9]*"
+                                      value={allFormValues[field.name] !== undefined ? allFormValues[field.name] : ""}
+                                      placeholder={
+                                        loadedConfig[field.name] !== undefined && loadedConfig[field.name] !== ""
+                                          ? loadedConfig[field.name]
+                                          : ""
+                                      }
+                                      min={field.type === "percentage" ? 1 : undefined}
+                                      max={field.type === "percentage" ? 100 : undefined}
+                                      onChange={(e) => {
+                                        let val = e.target.value.replace(/[^0-9]/g, "");
+                                        if (field.type === "percentage") {
+                                          if (val.length > 3) val = val.slice(0, 3);
+                                          if (val !== "" && Number(val) > 100) val = val.slice(0, val.length - 1);
+                                        }
+                                        setAllFormValues((prev) => ({
+                                          ...prev,
+                                          [field.name]: val,
+                                        }));
+                                      }}
+                                      onKeyDown={(e) => {
+                                        if (
+                                          ["e", "E", "+", "-", ".", ",", " "].includes(e.key) ||
+                                          (e.key.length === 1 && e.key.match(/[a-zA-Z]/))
+                                        ) {
+                                          e.preventDefault();
+                                        }
+                                        if (
+                                          field.type === "percentage" &&
+                                          e.target.value.length >= 3 &&
+                                          !["Backspace", "Delete", "ArrowLeft", "ArrowRight", "Tab"].includes(e.key)
+                                        ) {
+                                          e.preventDefault();
+                                        }
+                                      }}
+                                      className="signin-input"
+                                    />
+                                  </>
+                                ) : field.type === "checkbox" ? (
+                                  <input
+                                    type="checkbox"
+                                    checked={allFormValues[field.name] === true}
+                                    onChange={(e) =>
+                                      handleInputChange(field.name, e.target.checked, field.type)
+                                    }
+                                    id={field.name}
+                                    className="signin-checkbox"
+                                  />
+                                ) : field.type === "dropdown" ? (
+                                  <select
+                                    value={allFormValues[field.name] !== undefined ? allFormValues[field.name] : ""}
+                                    onChange={(e) =>
+                                      handleInputChange(field.name, e.target.value, field.type)
+                                    }
+                                    className="signin-select"
+                                  >
+                                    <option value="">
+                                      {loadedConfig[field.name] !== undefined && loadedConfig[field.name] !== ""
+                                        ? `Previous: ${loadedConfig[field.name]}`
+                                        : "Select"}
+                                    </option>
+                                    {field.options.map((opt) => (
+                                      <option key={opt} value={opt}>
+                                        {opt}
+                                      </option>
+                                    ))}
+                                  </select>
+                                ) : (
+                                  <input
+                                    type="text"
+                                    inputMode="numeric"
+                                    pattern="[0-9]*"
+                                    value={allFormValues[field.name] !== undefined ? allFormValues[field.name] : ""}
+                                    placeholder={
+                                      loadedConfig[field.name] !== undefined && loadedConfig[field.name] !== ""
+                                        ? loadedConfig[field.name]
+                                        : ""
+                                    }
+                                    min={field.type === "percentage" ? 1 : undefined}
+                                    max={field.type === "percentage" ? 100 : undefined}
+                                    onChange={(e) => {
+                                      let val = e.target.value.replace(/[^0-9]/g, "");
+                                      if (field.type === "percentage") {
+                                        if (val.length > 3) val = val.slice(0, 3);
+                                        if (val !== "" && Number(val) > 100) val = val.slice(0, val.length - 1);
+                                      }
+                                      setAllFormValues((prev) => ({
+                                        ...prev,
+                                        [field.name]: val,
+                                      }));
+                                    }}
+                                    onKeyDown={(e) => {
+                                      if (
+                                        ["e", "E", "+", "-", ".", ",", " "].includes(e.key) ||
+                                        (e.key.length === 1 && e.key.match(/[a-zA-Z]/))
+                                      ) {
+                                        e.preventDefault();
+                                      }
+                                      if (
+                                        field.type === "percentage" &&
+                                        e.target.value.length >= 3 &&
+                                        !["Backspace", "Delete", "ArrowLeft", "ArrowRight", "Tab"].includes(e.key)
+                                      ) {
+                                        e.preventDefault();
+                                      }
+                                    }}
+                                    className="signin-input"
+                                  />
+                                )}
+                              </>
+                            )}
+                          </div>
+                        );
+                      })}
                     </div>
                   </div>
                 );
@@ -404,3 +462,4 @@ function StandardConfigForm() {
 }
 
 export default StandardConfigForm;
+
