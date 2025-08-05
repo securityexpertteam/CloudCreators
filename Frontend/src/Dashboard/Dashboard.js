@@ -953,17 +953,17 @@ function Dashboard() {
 
             {/* Recommendation-wise Total Cost Bar Chart for 'Orphan' */}
             <div style={{background: '#fff', borderRadius: 16, boxShadow: '0 4px 16px #e0e0e0', padding: 24, minWidth: 350, maxWidth: 500, height: 300, display: 'flex', flexDirection: 'column', justifyContent: 'center'}}>
-              <h3 style={{textAlign: 'center', marginBottom: 16, color: '#222'}}>Recommendation: Orphan - Total Cost</h3>
+              <h3 style={{textAlign: 'center', marginBottom: 16, color: '#222'}}>Finding: Orphan - Total Cost</h3>
               <Bar
                 data={{
                   labels: filteredResources
-                    .filter((r) => r.Recommendation && r.Recommendation.includes('Orphan'))
+                    .filter((r) => r.Finding && r.Finding.includes('Orphan'))
                     .map((r) => r.ResourceType),
                   datasets: [
                     {
                       label: "Total Cost (USD)",
                       data: filteredResources
-                        .filter((r) => r.Recommendation && r.Recommendation.includes('Orphan'))
+                        .filter((r) => r.Finding && r.Finding.includes('Orphan'))
                         .map((r) => parseFloat(r.TotalCost) || 0),
                       backgroundColor: palette,
                     },
