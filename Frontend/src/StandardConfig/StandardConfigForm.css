@@ -2,7 +2,7 @@ body, html {
   margin: 0;
   padding: 0;
   font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-  background: linear-gradient(120deg, #232526 0%, #414345 100%);
+  background: linear-gradient(120deg, #eef3f6 0%, #414345 100%);
   min-height: 100vh;
   color: #1a1a1a;
 }
@@ -382,7 +382,7 @@ tr:nth-child(even) {
   font-size: 1.1rem;
   font-weight: 600;
   background: linear-gradient(90deg, #4287f5 0%, #7f53ac 100%);
-  color: #fff;
+  color: #c3cfe2;
   border: none;
   border-radius: 10px;
   box-shadow: 0 2px 8px rgba(31,38,135,0.08);
@@ -399,6 +399,7 @@ tr:nth-child(even) {
 .signin-bg {
   min-height: 100vh;
   width: 100vw;
+  background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -412,7 +413,7 @@ tr:nth-child(even) {
 }
 
 .signin-card {
-  background: #fff;
+  background: #fff !important;
   border-radius: 12px;
   border: 1.5px solid #e0e6ed;
   width: 900px;
@@ -423,6 +424,7 @@ tr:nth-child(even) {
   justify-content: center;
   box-sizing: border-box;
   padding: 0;
+  box-shadow: 0 4px 16px rgba(31,38,135,0.06);
 }
 
 .signin-card-content {
@@ -435,7 +437,7 @@ tr:nth-child(even) {
   font-size: 2rem;
   font-weight: 700;
   margin-bottom: 1.2rem;
-  color: #2d3e50;
+  color: #040f1a;
   text-align: center;
 }
 
@@ -466,7 +468,7 @@ tr:nth-child(even) {
   font-size: 1.15rem;
   font-weight: 600;
   margin-bottom: 1rem;
-  color: #1e293b;
+  color: #2d3e50;
 }
 
 .signin-fields-grid {
@@ -513,8 +515,8 @@ tr:nth-child(even) {
 }
 
 .signin-save-btn {
-  background: linear-gradient(90deg, #4287f5 0%, #7f53ac 100%);
-  color: #fff;
+  background: #2563eb !important;
+  color: #fff !important;
   border: none;
   border-radius: 10px;
   padding: 10px 28px;
@@ -523,26 +525,45 @@ tr:nth-child(even) {
   cursor: pointer;
   margin-top: 2rem;
   margin-bottom: 0.5rem;
-  transition: background 0.2s, box-shadow 0.2s, transform 0.1s, backdrop-filter 0.2s;
-  background-clip: padding-box;
-  box-shadow: 0 4px 24px rgba(66,135,245,0.12), 0 2px 8px rgba(167,66,245,0.10);
-  backdrop-filter: blur(6px) saturate(1.2);
-  -webkit-backdrop-filter: blur(6px) saturate(1.2);
-  opacity: 0.98;
+  transition: background 0.2s, box-shadow 0.2s, transform 0.1s;
+  box-shadow: 0 2px 8px rgba(36, 86, 231, 0.08);
 }
 
 .signin-save-btn:hover,
 .signin-save-btn:focus {
-  background: linear-gradient(90deg, #7f53ac 0%, #4287f5 100%);
-  box-shadow: 0 8px 32px rgba(66,135,245,0.18), 0 2px 16px rgba(167,66,245,0.12);
+  background: #1d4ed8 !important;
+  color: #fff !important;
+  box-shadow: 0 6px 24px rgba(36, 86, 231, 0.15);
   filter: brightness(1.05) saturate(1.08);
-  opacity: 1;
 }
 
 .signin-save-btn:active {
-  background: linear-gradient(90deg, #a742f5 0%, #4287f5 100%);
-  box-shadow: 0 2px 8px rgba(167, 66, 245, 0.12);
-  opacity: 0.96;
+  background: #1741b6 !important;
+  color: #fff !important;
+}
+
+.signin-type-btn {
+  background: #2563eb !important;
+  color: #fff !important;
+  border: none;
+  border-radius: 10px;
+  padding: 10px 28px;
+  font-size: 1.1rem;
+  font-weight: 600;
+  cursor: pointer;
+  margin-right: 10px;
+  margin-bottom: 10px;
+  transition: background 0.2s, box-shadow 0.2s, transform 0.1s;
+  box-shadow: 0 2px 8px rgba(36, 86, 231, 0.08);
+}
+
+.signin-type-btn.selected,
+.signin-type-btn:hover,
+.signin-type-btn:focus {
+  background: #1d4ed8 !important;
+  color: #fff !important;
+  box-shadow: 0 6px 24px rgba(36, 86, 231, 0.15);
+  filter: brightness(1.05) saturate(1.08);
 }
 
 /* Glassy fade-in animation */
@@ -610,3 +631,4 @@ tr:nth-child(even) {
     min-width: 100px;
   }
 }
+
