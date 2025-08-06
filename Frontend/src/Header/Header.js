@@ -33,28 +33,35 @@ const Header = () => {
           </NavLink>
         </nav>
 
-        <div className="user-icon" onClick={() => setShowProfile(!showProfile)} style={{ cursor: "pointer" }}>
+        <div
+          className="user-icon"
+          onMouseEnter={() => setShowProfile(true)}
+          onMouseLeave={() => setShowProfile(false)}
+          style={{ cursor: "pointer", position: "relative" }}
+        >
           <FaUserCircle size={24} />
+          {showProfile && user && (
+            <div
+              className="profile-modal"
+              onMouseEnter={() => setShowProfile(true)}
+              onMouseLeave={() => setShowProfile(false)}
+            >
+              <p><b>Email:</b> {user.email}</p>
+              <div style={{ width: "100%" }}>
+                <button
+                  className="logout-btn"
+                  onClick={() => {
+                    localStorage.removeItem("user");
+                    setShowProfile(false);
+                    navigate("/signin");
+                  }}
+                >
+                  Logout
+                </button>
+              </div>
+            </div>
+          )}
         </div>
-        {showProfile && user && (
-  <div className="profile-modal">
-    <p><b>First Name:</b> {user.firstname}</p>
-    <p><b>Last Name:</b> {user.lastname}</p>
-    <p><b>Email:</b> {user.email}</p>
-    <div style={{ display: "flex", gap: "10px" }}>
-      <button onClick={() => setShowProfile(false)}>Close</button>
-      <button
-        onClick={() => {
-          localStorage.removeItem("user");
-          setShowProfile(false);
-          navigate("/signin");
-        }}
-      >
-        Logout
-      </button>
-    </div>
-  </div>
-)}
       </div>
     </header>
   );
