@@ -12,6 +12,38 @@ const EnvironmentOnboarding = () => {
   }, [email]);
 
   const [user, setUser] = useState({
+  cloudName: "",
+  environment: "",
+  rootId: "",
+  managementUnitId: "",
+  vaultname: "",
+  secretname: "",
+  srvaccntName: "",
+  srvacctPass: "",
+  jsonFile: null, // <- for GCP only
+});
+
+
+  const [usersList, setUsersList] = useState([]);
+
+const handleAddUser = () => {
+  if (!user.cloudName || !user.environment || !user.rootId || !user.managementUnitId || !user.secretname) {
+    alert("Please fill all required fields");
+    return;
+  }
+
+  if (user.cloudName === "GCP" && !user.jsonFile) {
+    alert("Please upload the GCP JSON file");
+    return;
+  }
+
+  if (user.cloudName !== "GCP" && (!user.vaultname || !user.srvaccntName || !user.srvacctPass)) {
+    alert("Please fill vault credentials");
+    return;
+  }
+
+  setUsersList([...usersList, user]);
+  setUser({
     cloudName: "",
     environment: "",
     rootId: "",
@@ -19,32 +51,11 @@ const EnvironmentOnboarding = () => {
     vaultname: "",
     secretname: "",
     srvaccntName: "",
-    srvacctPass: ""
+    srvacctPass: "",
+    jsonFile: null,
   });
+};
 
-  const [usersList, setUsersList] = useState([]);
-
-  const handleAddUser = () => {
-    const requiredFields = ["cloudName", "environment", "rootId", "managementUnitId", "vaultname", "secretname", "srvaccntName", "srvacctPass"];
-    for (let field of requiredFields) {
-      if (!user[field]) {
-        alert(`Please fill the ${field} field`);
-        return;
-      }
-    }
-
-    setUsersList([...usersList, user]);
-    setUser({
-      cloudName: "",
-      environment: "",
-      rootId: "",
-      managementUnitId: "",
-      vaultname: "",
-      secretname: "",
-      srvaccntName: "",
-      srvacctPass: ""
-    });
-  };
 
   const handleEditUser = (index) => {
     setUser(usersList[index]);
@@ -55,38 +66,50 @@ const EnvironmentOnboarding = () => {
     setUsersList(usersList.filter((_, i) => i !== index));
   };
 
-  const handleSubmit = async () => {
+const handleSubmit = async () => {
+  const formData = new FormData();
+  formData.append("email", email);
 
+  // Convert user list to plain JS objects for stringification
+  const usersCopy = usersList.map((user) => {
+    const { jsonFile, ...rest } = user; // remove file
+    return rest;
+  });
 
-    const payload = {
-      users: usersList,
-      email: email,
-    };
+  formData.append("users", JSON.stringify(usersCopy));
 
-    try {
-      const response = await fetch("http://localhost:8000/environment_onboarding", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        alert(data.detail || "Error occurred during submission");
-        return;
-      }
-
-      alert(data.message);
-      setUsersList([]);
-      fetch(`http://localhost:8000/environments/${email}`)
-        .then(res => res.json())
-        .then(data => setEnvEntries(data.data || []));
-    } catch (error) {
-      alert("Error submitting data");
-      console.error("Submission Error:", error);
+  // Add GCP JSON files separately
+  usersList.forEach((user, index) => {
+    if (user.cloudName === "GCP" && user.jsonFile) {
+      formData.append("files", user.jsonFile, `${user.managementUnitId}.json`);
     }
-  };
+  });
+
+  try {
+    const response = await fetch("http://localhost:8000/environment_onboarding", {
+      method: "POST",
+      body: formData,
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      alert(data.detail || "Error occurred during submission");
+      return;
+    }
+
+    alert(data.message);
+    setUsersList([]);
+    fetch(`http://localhost:8000/environments/${email}`)
+      .then(res => res.json())
+      .then(data => setEnvEntries(data.data || []));
+  } catch (error) {
+    alert("Error submitting data");
+    console.error("Submission Error:", error);
+  }
+};
+
+
 
   const handleDeleteEnvEntry = async (envId) => {
   if (!window.confirm("Are you sure you want to delete this environment?")) return;
@@ -170,15 +193,29 @@ const EnvironmentOnboarding = () => {
           />
         </div>
 
-        <div className="input-group">
-          <label>Vault Name</label>
-          <input
-            type="text"
-            placeholder="Enter Vault Name"
-            value={user.vaultname}
-            onChange={(e) => setUser({ ...user, vaultname: e.target.value })}
-          />
-        </div>
+    {user.cloudName === "GCP" ? (
+  <div className="input-group">
+    <label>Upload GCP JSON File</label>
+    <input
+      type="file"
+      accept=".json"
+      onChange={(e) =>
+        setUser({ ...user, jsonFile: e.target.files[0] })
+      }
+    />
+  </div>
+) : (
+  <div className="input-group">
+    <label>Vault Name</label>
+    <input
+      type="text"
+      placeholder="Enter Vault Name"
+      value={user.vaultname}
+      onChange={(e) => setUser({ ...user, vaultname: e.target.value })}
+    />
+  </div>
+)}
+
 
         <div className="input-group">
           <label>Secret Name</label>
@@ -190,25 +227,30 @@ const EnvironmentOnboarding = () => {
           />
         </div>
 
-        <div className="input-group">
-          <label>Client ID (Vault)</label>
-          <input
-            type="text"
-            placeholder="Enter Client ID"
-            value={user.srvaccntName}
-            onChange={(e) => setUser({ ...user, srvaccntName: e.target.value })}
-          />
-        </div>
+        {user.cloudName !== "GCP" && (
+  <>
+    <div className="input-group">
+      <label>Client ID (Vault)</label>
+      <input
+        type="text"
+        placeholder="Enter Client ID"
+        value={user.srvaccntName}
+        onChange={(e) => setUser({ ...user, srvaccntName: e.target.value })}
+      />
+    </div>
 
-        <div className="input-group">
-          <label>Client Secret (Vault)</label>
-          <input
-            type="password"
-            placeholder="Enter Client Secret"
-            value={user.srvacctPass}
-            onChange={(e) => setUser({ ...user, srvacctPass: e.target.value })}
-          />
-        </div>
+    <div className="input-group">
+      <label>Client Secret (Vault)</label>
+      <input
+        type="password"
+        placeholder="Enter Client Secret"
+        value={user.srvacctPass}
+        onChange={(e) => setUser({ ...user, srvacctPass: e.target.value })}
+      />
+    </div>
+  </>
+)}
+
 
         <button className="add-btn" onClick={handleAddUser}>
           Add

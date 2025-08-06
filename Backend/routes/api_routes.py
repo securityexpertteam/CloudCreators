@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, Query,Request
+from fastapi import APIRouter, HTTPException, Query,Request,UploadFile, File, Form
 from models import User,BulkSignupRequest, Resource, StandardConfig, SignupUser , Trigger,SigninUser
 from database import users_collection,usersEnvironmentOnboarding_collection, get_db, users_signup_collection, resources_collection , triggers_collection
 from fastapi.encoders import jsonable_encoder
@@ -10,6 +10,9 @@ from bson import ObjectId
 import os
 import base64
 from dateutil import parser
+from fastapi.responses import JSONResponse
+from typing import List
+import shutil
 
 router = APIRouter()
 
@@ -107,18 +110,30 @@ def get_latest_config(
 
 # ====User Onboarding routes============
 
-
 @router.post("/environment_onboarding")
-async def environment_onboarding(request: Request):
-    data = await request.json()
-    email = data.get("email")
-    users = data.get("users", [])
-    cred_folder = os.path.join(os.getcwd(), "Creds")
+async def environment_onboarding(
+    request: Request,
+    email: str = Form(...),
+    users: str = Form(...),
+    files: List[UploadFile] = File(None)
+):
+    import json
+    import os
+    import shutil
+    from cryptography.fernet import Fernet
+    from fastapi import HTTPException
+
+    users = json.loads(users)
+
+    # ✅ Correct path to Creds folder
+    cred_folder = os.path.join(os.path.dirname(__file__), "../Creds")
+    cred_folder = os.path.abspath(cred_folder)
     os.makedirs(cred_folder, exist_ok=True)
 
     inserted_users = []
+    file_map = {f.filename: f for f in files or []}
 
-    for user in users:
+    for idx, user in enumerate(users):
         existing = usersEnvironmentOnboarding_collection.find_one({
             "cloudName": user["cloudName"],
             "environment": user["environment"],
@@ -131,18 +146,32 @@ async def environment_onboarding(request: Request):
         user_dict = dict(user)
         user_dict["email"] = email
 
+        # Encrypt credentials
         fernet = Fernet(os.environ["fernet_key"])
-
-        # Encrypt both srvacctPass and srvaccntName
-        encrypted_pass = fernet.encrypt(user["srvacctPass"].encode()).decode()
-        encrypted_client_id = fernet.encrypt(user["srvaccntName"].encode()).decode()
-
-        user_dict["srvacctPass"] = encrypted_pass
-        user_dict["srvaccntName"] = encrypted_client_id  # store encrypted name
+        if user.get("srvacctPass"):
+            user_dict["srvacctPass"] = fernet.encrypt(user["srvacctPass"].encode()).decode()
+        if user.get("srvaccntName"):
+            user_dict["srvaccntName"] = fernet.encrypt(user["srvaccntName"].encode()).decode()
 
         result = usersEnvironmentOnboarding_collection.insert_one(user_dict)
         user_dict["_id"] = str(result.inserted_id)
         inserted_users.append(user_dict)
+
+        # Save GCP file
+        # Save GCP file
+        if user["cloudName"] == "GCP":
+            saved = False
+            for file in files or []:
+                if file.filename.endswith(".json"):
+                    dest_path = os.path.join(cred_folder, f"{user['managementUnitId']}.json")
+                    print(f"Saving file to: {dest_path}")
+                    with open(dest_path, "wb") as f:
+                        shutil.copyfileobj(file.file, f)
+                    saved = True
+                    break
+            if not saved:
+                print("No GCP JSON file found to save.")
+
 
     if not inserted_users:
         raise HTTPException(status_code=400, detail="All entries are duplicates or failed")

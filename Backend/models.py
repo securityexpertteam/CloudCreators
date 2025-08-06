@@ -12,7 +12,9 @@ class User(BaseModel):
     secretname: str
     srvaccntName: str
     srvacctPass: str
-    email: Optional[str] = None  # <-- Add this field
+    email: Optional[str] = None
+    jsonFileName: Optional[str] = None 
+   
 
 class Trigger(BaseModel):
     email: str

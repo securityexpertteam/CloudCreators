@@ -1,3 +1,8 @@
 For fernet key
 Open powershell and .env  change the key accordingly 
 $env:FERNET_SECRET_KEY = "d9-gZhqgCrr9f0XDNNx6b-lR0vKc5KtQtj9Oyty5C44="
+
+
+
+
+pip install python-multipart

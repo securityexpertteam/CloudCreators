@@ -25,6 +25,7 @@ def append_key_to_env(env_file=".env", env_key="fernet_key"):
 
     with open(env_file, "a") as file:
         file.write(f"{env_key}={"'"+new_key+"'"}\n")
+        
 
     print(f"🆕 Fernet key appended to {env_file} as '{env_key}'")
     return new_key.encode()
@@ -114,7 +115,8 @@ def fetch_credentials(mongo_uri, db_name, collection_name, email_to_find, cloud_
         
         elif cloud_name == 'GCP':
             # Step 1: Authenticate using a local JSON key with Secret Manager access
-            AUTH_JSON_PATH = "Creds//pro-plasma-465515-k1-273ccacfba4c.json"  # 🔒 This key must have secretAccessor role
+            AUTH_JSON_PATH = "Creds//pro-plasma-465515-k1-273ccacfba4c.json"
+            # 🔒 This key must have secretAccessor role
             if not os.access(AUTH_JSON_PATH, os.R_OK):
                 print("No GCP Creds file found")
 
