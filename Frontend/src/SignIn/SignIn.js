@@ -112,17 +112,20 @@ const SignIn = () => {
             Forgot password?
           </button>
         </div>
-        <button type="submit" className="signin-button" disabled={submitting}>
-          {submitting ? "Signing In..." : "Sign In"}
-        </button>
-        <div className="signup-redirect">
+        <div className="signin-actions">
+          <button
+            type="submit"
+            className="signin-btn"
+            disabled={submitting}
+          >
+            {submitting ? "Signing In..." : "Sign In"}
+          </button>
           <button
             type="button"
-            className="signup-link"
+            className="signup-btn"
             onClick={() => navigate("/signup")}
-            style={{ marginTop: "16px", background: "none", border: "none", color: "#007bff", cursor: "pointer", textDecoration: "underline" }}
           >
-            Sign Up?
+            Sign Up
           </button>
         </div>
       </form>
