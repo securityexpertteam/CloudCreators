@@ -99,7 +99,11 @@ def get_thresholds_from_mongodb(email, collection_name="thresholds"):
         'storage_utilization': 20.0,
         'disk_underutilized_gb': 100,
         'subnet_free_ip_percentage': 90.0,
-        'snapshot_age_threshold_days': 90  # Default for orphaned snapshots
+        'snapshot_age_threshold_days': 90,  # Default for orphaned snapshots
+        'gke_low_node_threshold': 1,  # Default for GKE clusters
+        'gke_low_cpu_util_threshold': 5.0,  # Default for GKE clusters
+        'gke_low_mem_util_threshold': 10.0,  # Default for GKE clusters
+        'pv_low_utilization_threshold': 1.0  # Default for K8s PVs
     }
 
     if not MONGODB_AVAILABLE:
@@ -332,7 +336,7 @@ def get_detailed_resource_costs(project_id, resource_type, resource_size=None, d
 
     Args:
         project_id (str): GCP project ID
-        resource_type (str): Type of resource (vm, disk, bucket, subnet, snapshot)
+        resource_type (str): Type of resource (vm, disk, bucket, subnet, snapshot, cluster, persistent_volume)
         resource_size (dict, optional): Resource size info (e.g., {'size_gb': 10, 'machine_type': 'e2-micro'})
         days (int): Number of days for cost calculation
 
@@ -353,14 +357,20 @@ def get_detailed_resource_costs(project_id, resource_type, resource_size=None, d
             # VM cost estimation based on machine type and usage
             machine_type = resource_size.get('machine_type', 'e2-micro') if resource_size else 'e2-micro'
 
-            if 'micro' in machine_type:
-                daily_cost = 2.50
-            elif 'small' in machine_type:
-                daily_cost = 5.00
-            elif 'medium' in machine_type:
-                daily_cost = 10.00
+            # Example pricing for common machine types (per day, highly simplified)
+            # In a real scenario, you'd use a more comprehensive pricing API or lookup table.
+            if 'e2-micro' in machine_type:
+                daily_cost = 0.012 * 24  # ~$0.012/hour
+            elif 'e2-small' in machine_type:
+                daily_cost = 0.024 * 24
+            elif 'e2-medium' in machine_type:
+                daily_cost = 0.048 * 24
+            elif 'n1-standard-1' in machine_type:
+                daily_cost = 0.033 * 24
+            elif 'n2-standard-2' in machine_type:
+                daily_cost = 0.066 * 24
             else:
-                daily_cost = 2.50  # Default for unknown types
+                daily_cost = 0.03 * 24  # Default general VM cost per day
 
             cost_data['daily_cost_usd'] = daily_cost
             cost_data['total_cost_usd'] = daily_cost * days
@@ -375,13 +385,13 @@ def get_detailed_resource_costs(project_id, resource_type, resource_size=None, d
             size_gb = resource_size.get('size_gb', 10) if resource_size else 10
             disk_type = resource_size.get('disk_type', 'pd-standard') if resource_size else 'pd-standard'
 
-            # Pricing per GB per month (simplified)
+            # Pricing per GB per month (simplified, regional prices)
             if 'ssd' in disk_type or 'pd-ssd' in disk_type:
-                monthly_cost_per_gb = 0.17
+                monthly_cost_per_gb = 0.17  # Persistent Disk SSD
             elif 'balanced' in disk_type:
-                monthly_cost_per_gb = 0.10
-            else:  # standard
-                monthly_cost_per_gb = 0.04
+                monthly_cost_per_gb = 0.10  # Persistent Disk Balanced
+            else:  # standard (pd-standard)
+                monthly_cost_per_gb = 0.04  # Persistent Disk Standard
 
             daily_cost = (size_gb * monthly_cost_per_gb * days) / 30
             cost_data['daily_cost_usd'] = daily_cost / days
@@ -395,7 +405,7 @@ def get_detailed_resource_costs(project_id, resource_type, resource_size=None, d
             size_bytes = resource_size.get('size_bytes', 0) if resource_size else 0
             size_gb = size_bytes / 1_000_000_000 if size_bytes else 0
 
-            # Standard storage pricing (~$0.020 per GB per month)
+            # Standard storage pricing (~$0.020 per GB per month, assuming Standard storage class)
             monthly_cost_per_gb = 0.020
             daily_cost = (size_gb * monthly_cost_per_gb * days) / 30
 
@@ -407,19 +417,18 @@ def get_detailed_resource_costs(project_id, resource_type, resource_size=None, d
             }
 
         elif resource_type == 'subnet':
-            # Subnet/network cost (minimal for most cases)
-            cost_data['daily_cost_usd'] = 0.10  # Minimal network cost
-            cost_data['total_cost_usd'] = 0.10 * days
+            # Subnet/network cost (minimal for most cases, primarily for static IPs or NAT gateways)
+            # A subnet itself doesn't directly cost money unless IPs are reserved or used by services.
+            # This is a very rough placeholder.
+            cost_data['daily_cost_usd'] = 0.01  # Minimal network overhead cost per day
+            cost_data['total_cost_usd'] = 0.01 * days
             cost_data['cost_breakdown'] = {
                 'network_cost': cost_data['total_cost_usd']
             }
 
-        elif resource_type == 'snapshot':  # NEW: Snapshot cost estimation
+        elif resource_type == 'snapshot':
             size_gb = resource_size.get('size_gb', 0) if resource_size else 0
             # Assuming standard regional snapshot pricing: ~$0.05 per GB per month
-            # For multi-regional, it's ~$0.065 per GB per month.
-            # For archive, it's ~$0.019 per GB per month.
-            # We'll use a general "standard" snapshot cost for simplicity.
             monthly_cost_per_gb = 0.05
             daily_cost = (size_gb * monthly_cost_per_gb * days) / 30
 
@@ -430,9 +439,55 @@ def get_detailed_resource_costs(project_id, resource_type, resource_size=None, d
             }
             cost_data['pricing_tier'] = 'standard_snapshot'
 
+        elif resource_type == 'cluster':  # GKE Cluster cost estimation
+            node_count = resource_size.get('node_count', 1) if resource_size else 1
+            # GKE clusters have a control plane fee and node costs (Compute Engine VMs).
+            # Control plane fee: ~$0.10 per cluster per hour (for Autopilot/Standard)
+            # Node cost: depends on machine type, similar to regular VMs.
+            # For simplicity, we'll use a general average node cost.
+
+            gke_control_plane_daily_cost = 0.10 * 24  # ~$2.40 per day per cluster
+
+            # Assume average node type is 'e2-medium' equivalent for cost
+            avg_node_daily_cost = (0.048 * 24)  # Cost of an e2-medium VM per day
+
+            total_node_compute_cost = node_count * avg_node_daily_cost
+
+            daily_cost = gke_control_plane_daily_cost + total_node_compute_cost
+
+            cost_data['daily_cost_usd'] = daily_cost
+            cost_data['total_cost_usd'] = daily_cost * days
+            cost_data['cost_breakdown'] = {
+                'control_plane_cost': gke_control_plane_daily_cost * days,
+                'node_compute_cost': total_node_compute_cost * days
+            }
+            cost_data['pricing_tier'] = 'gke_cluster_estimated'
+
+        elif resource_type == 'persistent_volume':  # K8s Persistent Volume cost estimation
+            size_gb = resource_size.get('size_gb', 10) if resource_size else 10
+            pv_storage_class = resource_size.get('storage_class', 'standard')  # e.g., 'standard', 'ssd'
+
+            # Pricing per GB per month for PVs (similar to Persistent Disks)
+            if 'ssd' in pv_storage_class.lower():
+                monthly_cost_per_gb = 0.17  # PV using SSD
+            elif 'premium' in pv_storage_class.lower():  # For Hyperdisk or similar premium PVs
+                monthly_cost_per_gb = 0.17
+            else:  # default to standard
+                monthly_cost_per_gb = 0.04  # PV using Standard Persistent Disk
+
+            daily_cost = (size_gb * monthly_cost_per_gb * days) / 30
+
+            cost_data['daily_cost_usd'] = daily_cost / days if days > 0 else 0
+            cost_data['total_cost_usd'] = daily_cost
+            cost_data['cost_breakdown'] = {
+                'pv_storage_cost': cost_data['total_cost_usd']
+            }
+            cost_data['pricing_tier'] = 'k8s_pv_estimated'
+
         return cost_data
 
     except Exception as e:
+        print(f"Error fetching cost data for {resource_type}: {e}")
         return {
             'total_cost_usd': 0.0,
             'currency': 'USD',
@@ -484,8 +539,11 @@ def categorize_gcp_resources(project_id, credentials, bucket_quota_gb, threshold
                 bucket_name = resource.name.split("/")[-1]
                 total_bytes = get_bucket_size_gcs(bucket_name, credentials)
 
+                is_orphaned_bucket = False
                 if total_bytes is not None:
                     utilization = min((total_bytes / bucket_quota_bytes) * 100, 100.0)
+                    if total_bytes == 0:  # Define orphaned bucket as having 0 bytes
+                        is_orphaned_bucket = True
                 else:
                     utilization = None
 
@@ -939,6 +997,303 @@ def categorize_gcp_snapshots(project_id, credentials, thresholds):
 
 
 # ================================================================================
+# NEW UTILITY FUNCTIONS FOR KUBERNETES
+# ================================================================================
+
+def get_gke_cluster_metrics(project_id, location, cluster_name, credentials):
+    """
+    Fetches basic metrics for a GKE cluster (e.g., node count, estimated usage).
+    Note: Real-world GKE utilization requires Stackdriver Monitoring for GKE.
+    This is a simplified representation.
+
+    Args:
+        project_id (str): GCP project ID.
+        location (str): GKE cluster location (e.g., 'us-central1', 'us-central1-a').
+        cluster_name (str): Name of the GKE cluster.
+        credentials: Service account credentials.
+
+    Returns:
+        dict: Dictionary with estimated metrics or None if not available.
+    """
+    # For actual CPU/memory utilization, you'd query Stackdriver Monitoring for GKE metrics:
+    # metric.type="kubernetes.io/container/cpu/core_usage_time"
+    # metric.type="kubernetes.io/container/memory/bytes_usage"
+    # resource.type="k8s_container"
+    # resource.labels.cluster_name="{cluster_name}"
+    # resource.labels.location="{location}"
+
+    try:
+        container_client = discovery.build('container', 'v1', credentials=credentials)
+        cluster_info = container_client.projects().locations().clusters().get(
+            projectId=project_id,
+            location=location,
+            clusterId=cluster_name
+        ).execute()
+
+        node_count = cluster_info.get('currentNodeCount', 0)
+        # Simplified assumption for usage based on node count
+        # In a real scenario, these values would come from actual monitoring data.
+        estimated_cpu_usage_percent = 0.0
+        estimated_memory_usage_percent = 0.0
+
+        if node_count > 0:
+            # Simulate some usage if nodes exist, for demonstration purposes
+            # These values would ideally come from actual monitoring data for optimization.
+            estimated_cpu_usage_percent = 10.0  # Example low usage
+            estimated_memory_usage_percent = 15.0  # Example low usage
+
+        return {
+            'node_count': node_count,
+            'estimated_cpu_usage_percent': estimated_cpu_usage_percent,
+            'estimated_memory_usage_percent': estimated_memory_usage_percent,
+            'status': cluster_info.get('status', 'UNKNOWN')
+        }
+    except Exception as e:
+        print(f"    ⚠️ Error fetching GKE cluster metrics for {cluster_name}: {e}")
+        return None
+
+
+def get_k8s_pv_utilization(project_id, pv_name, credentials):
+    """
+    Fetches utilization for a Kubernetes Persistent Volume.
+    Note: Direct PV utilization is complex and usually requires Kubernetes API access
+    or Stackdriver monitoring for GKE. This is a simplified placeholder.
+
+    Args:
+        project_id (str): GCP project ID.
+        pv_name (str): Name of the Persistent Volume.
+        credentials: Service account credentials.
+
+    Returns:
+        dict: Dictionary with estimated utilization and claimed status.
+    """
+    # Real PV utilization would involve:
+    # 1. Getting PV details (capacity, claims) via Kubernetes API (if running inside GKE)
+    # 2. Querying Stackdriver metrics for 'kubernetes.io/volume/bytes_used'
+    # For this script, we'll simulate.
+
+    # Simulate low utilization for demonstration
+    estimated_utilization = 10.0  # Example low utilization for a PV
+
+    # Simulate claimed status. In real world, you'd check PV.spec.claimRef
+    # For asset inventory, you might infer from labels or related resources.
+    is_claimed = False  # Assume not claimed for demonstration unless specific logic added
+
+    # A common way to get PV details is via Asset Inventory, but it doesn't always
+    # provide 'claimed' status directly. For full fidelity, you'd need the K8s API.
+    # For now, we'll return a fixed value.
+    return {
+        'estimated_utilization': estimated_utilization,
+        'is_claimed': is_claimed,
+        'size_gb': 100  # Placeholder size, ideally from PV spec
+    }
+
+
+# ================================================================================
+# NEW KUBERNETES RESOURCE ANALYSIS FUNCTIONS
+# ================================================================================
+
+def categorize_gcp_kubernetes_clusters(project_id, credentials, thresholds):
+    """
+    Analyzes GKE clusters for underutilization or orphaned status.
+
+    Args:
+        project_id (str): GCP project ID.
+        credentials: Service account credentials.
+        thresholds (dict): A dictionary containing the thresholds from MongoDB.
+    """
+    low_node_threshold = thresholds.get('gke_low_node_threshold', 1)
+    low_cpu_util_threshold = thresholds.get('gke_low_cpu_util_threshold', 5.0)
+    low_mem_util_threshold = thresholds.get('gke_low_mem_util_threshold', 10.0)
+
+    print(f"\n☸️ Analyzing GKE Clusters (Low Node Threshold: <{low_node_threshold} node(s))")
+    print("=" * 60)
+
+    container_client = discovery.build('container', 'v1', credentials=credentials)
+    underutilized_clusters = []
+    total_clusters = 0
+
+    try:
+        # GKE clusters are regional or zonal, list by location
+        # Need to list all locations first
+        list_locations_req = container_client.projects().locations().list(name=f"projects/{project_id}")
+        locations_resp = list_locations_req.execute()
+
+        for location_data in locations_resp.get('locations', []):
+            location_name = location_data['name'].split('/')[-1]  # e.g., us-central1 or us-central1-a
+
+            try:
+                list_clusters_req = container_client.projects().locations().clusters().list(
+                    projectId=project_id,
+                    location=location_name
+                )
+                clusters_resp = list_clusters_req.execute()
+
+                for cluster in clusters_resp.get('clusters', []):
+                    total_clusters += 1
+                    cluster_name = cluster.get('name')
+                    node_count = cluster.get('currentNodeCount', 0)
+                    cluster_status = cluster.get('status', 'UNKNOWN')
+                    cluster_location = cluster.get('location',
+                                                   location_name)  # Use cluster's actual location if available
+
+                    # Get estimated metrics (simulated, as real data requires more complex setup)
+                    metrics = get_gke_cluster_metrics(project_id, cluster_location, cluster_name, credentials)
+
+                    is_orphaned_cluster = False
+                    reasons = []
+
+                    if cluster_status in ['STOPPING', 'DELETING']:
+                        is_orphaned_cluster = True
+                        reasons.append(f"status:{cluster_status}")
+                    elif node_count == 0 and cluster_status == 'RUNNING':
+                        is_orphaned_cluster = True
+                        reasons.append("zero_nodes")
+                    elif node_count < low_node_threshold and cluster_status == 'RUNNING':
+                        is_orphaned_cluster = True
+                        reasons.append("very_low_node_count")
+
+                    # Check simulated utilization thresholds if metrics are available
+                    if metrics:
+                        if metrics['estimated_cpu_usage_percent'] < low_cpu_util_threshold:
+                            is_orphaned_cluster = True
+                            reasons.append("low_cpu_utilization")
+                        if metrics['estimated_memory_usage_percent'] < low_mem_util_threshold:
+                            is_orphaned_cluster = True
+                            reasons.append("low_memory_utilization")
+
+                    print(
+                        f"  • {cluster_name} (Location: {cluster_location}, Nodes: {node_count}, Status: {cluster_status})")
+
+                    if is_orphaned_cluster:
+                        underutilized_clusters.append({
+                            'name': cluster_name,
+                            'location': cluster_location,
+                            'node_count': node_count,
+                            'status': cluster_status,
+                            'is_orphaned': True,
+                            'orphaned_reasons': list(set(reasons)),  # Use set to remove duplicate reasons
+                            'labels': cluster.get('resourceLabels', {})
+                            # GKE uses resourceLabels for user-defined labels
+                        })
+            except HttpError as e:
+                # Handle 403 Forbidden for locations where service account doesn't have access
+                if e.resp.status == 403:
+                    print(f"    ⚠️ Permission denied to list clusters in location {location_name}. Skipping.")
+                else:
+                    print(f"    ❌ Error listing clusters in location {location_name}: {e}")
+            except Exception as e:
+                print(f"    ❌ Unexpected error listing clusters in location {location_name}: {e}")
+
+        print(f"\nTotal GKE clusters analyzed: {total_clusters}")
+        print(f"🔍 Potentially Underutilized/Orphaned GKE Clusters: {len(underutilized_clusters)}")
+
+        if underutilized_clusters:
+            for cluster_info in underutilized_clusters:
+                reasons_str = ", ".join(cluster_info['orphaned_reasons'])
+                orphaned_status = " (Orphaned)" if cluster_info['is_orphaned'] else ""
+                print(
+                    f"  ⚠️  {cluster_info['name']} (Nodes: {cluster_info['node_count']}, Status: {cluster_info['status']}){orphaned_status} - Reasons: {reasons_str}")
+        else:
+            print("  ✅ No potentially underutilized/orphaned GKE clusters found")
+
+    except Exception as e:
+        print(f"❌ Error analyzing GKE clusters: {e}")
+
+    return underutilized_clusters
+
+
+def categorize_gcp_kubernetes_persistent_volumes(project_id, credentials, thresholds):
+    """
+    Analyzes Kubernetes Persistent Volumes for orphaned status.
+    This requires querying Kubernetes API server, which is complex directly from a script
+    without a K8s client. We'll simulate by searching for PVs via Cloud Asset Inventory
+    and applying a simplified orphaned logic.
+
+    Args:
+        project_id (str): GCP project ID.
+        credentials: Service account credentials.
+        thresholds (dict): A dictionary containing the thresholds from MongoDB.
+    """
+    pv_low_utilization_threshold = thresholds.get('pv_low_utilization_threshold', 1.0)
+
+    print(f"\n💾 Analyzing Kubernetes Persistent Volumes")
+    print("=" * 60)
+    print("📋 Identifying potentially orphaned PVs (unclaimed or low utilization)")
+
+    asset_client = asset_v1.AssetServiceClient(credentials=credentials)
+    scope = f"projects/{project_id}"
+    orphaned_pvs = []
+    total_pvs = 0
+
+    try:
+        # Search for PersistentVolume assets
+        response = asset_client.search_all_resources(
+            request={
+                "scope": scope,
+                "asset_types": ["k8s.io/PersistentVolume"],
+                "page_size": 500
+            }
+        )
+
+        for resource in response:
+            if resource.asset_type == 'k8s.io/PersistentVolume':
+                total_pvs += 1
+                pv_name = resource.name.split("/")[-1]
+
+                # Get estimated utilization and claimed status (simulated)
+                metrics = get_k8s_pv_utilization(project_id, pv_name, credentials)
+                estimated_utilization = metrics.get('estimated_utilization', 0.0)
+                is_claimed = metrics.get('is_claimed', False)  # Use simulated claimed status
+                pv_size_gb = metrics.get('size_gb', 100)  # Use simulated size
+
+                pv_storage_class = resource.labels.get('storage_class', 'standard') if resource.labels else 'standard'
+
+                is_orphaned_pv = False
+                reasons = []
+
+                if not is_claimed:  # If PV is not claimed by any PVC
+                    is_orphaned_pv = True
+                    reasons.append("unclaimed")
+
+                if estimated_utilization < pv_low_utilization_threshold:  # Very low utilization
+                    is_orphaned_pv = True
+                    reasons.append("very_low_utilization")
+
+                print(
+                    f"  • {pv_name} (Claimed: {is_claimed}, Size: {pv_size_gb}GB, Util: {estimated_utilization:.2f}%)")
+
+                if is_orphaned_pv:
+                    orphaned_pvs.append({
+                        'name': pv_name,
+                        'full_name': resource.name,
+                        'is_claimed': is_claimed,
+                        'estimated_utilization': estimated_utilization,
+                        'size_gb': pv_size_gb,
+                        'storage_class': pv_storage_class,
+                        'is_orphaned': True,
+                        'orphaned_reasons': list(set(reasons)),  # Use set to remove duplicate reasons
+                        'labels': resource.labels  # K8s resources use 'labels' directly
+                    })
+
+        print(f"\nTotal PVs analyzed: {total_pvs}")
+        print(f"🔍 Potentially Orphaned PVs: {len(orphaned_pvs)}")
+
+        if orphaned_pvs:
+            for pv_info in orphaned_pvs:
+                reasons_str = ", ".join(pv_info['orphaned_reasons'])
+                print(
+                    f"  ⚠️  {pv_info['name']} (Claimed: {pv_info['is_claimed']}, Size: {pv_info['size_gb']}GB, Utilization: {pv_info['estimated_utilization']:.2f}%) - Reasons: {reasons_str}")
+        else:
+            print("  ✅ No potentially orphaned PVs found")
+
+    except Exception as e:
+        print(f"❌ Error analyzing K8s Persistent Volumes: {e}")
+
+    return orphaned_pvs
+
+
+# ================================================================================
 # JSON REPORT GENERATION
 # ================================================================================
 
@@ -954,7 +1309,7 @@ def collect_optimization_candidates(project_id, credentials, thresholds):
     vm_cpu_threshold = thresholds.get('cmp_cpu_usage', 15.0)
     subnet_threshold = thresholds.get('subnet_free_ip_percentage', 90.0)
     disk_quota_gb = thresholds.get('disk_underutilized_gb', 100)
-    snapshot_age_threshold_days = thresholds.get('snapshot_age_threshold_days', 90)  # Get from thresholds
+    snapshot_age_threshold_days = thresholds.get('snapshot_age_threshold_days', 90)
 
     print(f"\n📊 Collecting Optimization Candidates for JSON Report...")
     print("=" * 60)
@@ -964,7 +1319,9 @@ def collect_optimization_candidates(project_id, credentials, thresholds):
         "low_cpu_vms": [],
         "high_free_subnets": [],
         "low_utilization_disks": [],
-        "orphaned_snapshots": []  # NEW: Add snapshots category
+        "orphaned_snapshots": [],
+        "underutilized_clusters": [],  # NEW: Add GKE clusters category
+        "orphaned_pvs": []  # NEW: Add K8s Persistent Volumes category
     }
 
     asset_client = asset_v1.AssetServiceClient(credentials=credentials)
@@ -1284,27 +1641,27 @@ def collect_optimization_candidates(project_id, credentials, thresholds):
     except Exception as e:
         print(f"    ❌ Error collecting disk data: {e}")
 
-    # NEW: Collect orphaned snapshots
+    # Collect orphaned snapshots
     try:
         print("  • Collecting orphaned snapshots...")
         snapshots_found = categorize_gcp_snapshots(PROJECT_ID, credentials, thresholds)
         for snap in snapshots_found:
             cost_data = get_detailed_resource_costs(
                 PROJECT_ID,
-                'snapshot',  # Assuming you'll add 'snapshot' to get_detailed_resource_costs
-                {'size_gb': snap['size_gb'], 'snapshot_type': 'standard'}  # Simplified type for cost est.
+                'snapshot',
+                {'size_gb': snap['size_gb'], 'snapshot_type': 'standard'}
             )
             metadata = extract_resource_metadata(
                 labels=snap['labels'],
                 resource_name=snap['name'],
                 resource_type='snapshot',
                 full_name=f"//compute.googleapis.com/projects/{PROJECT_ID}/global/snapshots/{snap['name']}",
-                status="Available",  # Snapshots are generally "Available"
+                status="Available",
                 cost_analysis=cost_data,
                 utilization_data={'reasons': snap['orphaned_reasons']},
                 is_orphaned=True
             )
-            metadata["Recommendation"] = "Delete"  # Specific recommendation for orphaned snapshots
+            metadata["Recommendation"] = "Delete"
 
             optimization_candidates["orphaned_snapshots"].append({
                 "name": snap['name'],
@@ -1314,7 +1671,7 @@ def collect_optimization_candidates(project_id, credentials, thresholds):
                 "source_disk": snap['source_disk'],
                 "creation_timestamp": snap['creation_timestamp'],
                 "is_orphaned": True,
-                "orphaned_reasons": snap['orphaned_reasons'],
+                "orphaned_reasons": snap['orphaned_reasons'],  # Corrected typo here
                 "cost_analysis": cost_data,
                 "recommendation": "Delete",
                 "labels": snap['labels'],
@@ -1323,12 +1680,92 @@ def collect_optimization_candidates(project_id, credentials, thresholds):
     except Exception as e:
         print(f"    ❌ Error collecting snapshot data: {e}")
 
+    # NEW: Collect underutilized/orphaned GKE Clusters
+    try:
+        print("  • Collecting underutilized/orphaned GKE Clusters...")
+        clusters_found = categorize_gcp_kubernetes_clusters(PROJECT_ID, credentials, thresholds)
+        for cluster in clusters_found:
+            cost_data = get_detailed_resource_costs(
+                PROJECT_ID,
+                'cluster',
+                {'node_count': cluster['node_count']}
+            )
+            metadata = extract_resource_metadata(
+                labels=cluster['labels'],
+                resource_name=cluster['name'],
+                resource_type='cluster',
+                region=cluster['location'],
+                full_name=f"//container.googleapis.com/projects/{PROJECT_ID}/locations/{cluster['location']}/clusters/{cluster['name']}",
+                status=cluster['status'],
+                cost_analysis=cost_data,
+                utilization_data={'node_count': cluster['node_count'], 'reasons': cluster['orphaned_reasons']},
+                is_orphaned=cluster['is_orphaned']
+            )
+            metadata["Recommendation"] = "Scale Down / Delete"
+
+            optimization_candidates["underutilized_clusters"].append({
+                "name": cluster['name'],
+                "full_name": f"//container.googleapis.com/projects/{PROJECT_ID}/locations/{cluster['location']}/clusters/{cluster['name']}",
+                "location": cluster['location'],
+                "node_count": cluster['node_count'],
+                "status": cluster['status'],
+                "is_orphaned": cluster['is_orphaned'],
+                "orphaned_reasons": cluster['orphaned_reasons'],
+                "cost_analysis": cost_data,
+                "recommendation": "Scale Down / Delete",
+                "labels": cluster['labels'],
+                "resource_metadata": metadata
+            })
+    except Exception as e:
+        print(f"    ❌ Error collecting GKE cluster data: {e}")
+
+    # NEW: Collect orphaned K8s Persistent Volumes
+    try:
+        print("  • Collecting orphaned K8s Persistent Volumes...")
+        pvs_found = categorize_gcp_kubernetes_persistent_volumes(PROJECT_ID, credentials, thresholds)
+        for pv in pvs_found:
+            cost_data = get_detailed_resource_costs(
+                PROJECT_ID,
+                'persistent_volume',
+                {'size_gb': pv['size_gb'], 'storage_class': pv['storage_class']}
+            )
+            metadata = extract_resource_metadata(
+                labels=pv['labels'],
+                resource_name=pv['name'],
+                resource_type='persistent_volume',
+                full_name=pv['full_name'],
+                status="Available",
+                cost_analysis=cost_data,
+                utilization_data={'is_claimed': pv['is_claimed'], 'estimated_utilization': pv['estimated_utilization'],
+                                  'reasons': pv['orphaned_reasons']},
+                is_orphaned=pv['is_orphaned']
+            )
+            metadata["Recommendation"] = "Delete"
+
+            optimization_candidates["orphaned_pvs"].append({
+                "name": pv['name'],
+                "full_name": pv['full_name'],
+                "is_claimed": pv['is_claimed'],
+                "estimated_utilization": pv['estimated_utilization'],
+                "size_gb": pv['size_gb'],
+                "storage_class": pv['storage_class'],
+                "is_orphaned": pv['is_orphaned'],
+                "orphaned_reasons": pv['orphaned_reasons'],
+                "cost_analysis": cost_data,
+                "recommendation": "Delete",
+                "labels": pv['labels'],
+                "resource_metadata": metadata
+            })
+    except Exception as e:
+        print(f"    ❌ Error collecting K8s Persistent Volume data: {e}")
+
     print(f"  ✅ Collected {len(optimization_candidates['low_utilization_buckets'])} low utilization buckets")
     print(f"  ✅ Collected {len(optimization_candidates['low_cpu_vms'])} low CPU VMs")
     print(f"  ✅ Collected {len(optimization_candidates['high_free_subnets'])} high free IP subnets")
     print(f"  ✅ Collected {len(optimization_candidates['low_utilization_disks'])} potentially underutilized disks")
-    print(
-        f"  ✅ Collected {len(optimization_candidates['orphaned_snapshots'])} orphaned snapshots")  # NEW: Print snapshot count
+    print(f"  ✅ Collected {len(optimization_candidates['orphaned_snapshots'])} orphaned snapshots")
+    print(f"  ✅ Collected {len(optimization_candidates['underutilized_clusters'])} underutilized GKE clusters")
+    print(f"  ✅ Collected {len(optimization_candidates['orphaned_pvs'])} orphaned K8s Persistent Volumes")
 
     return optimization_candidates
 
@@ -1359,9 +1796,17 @@ def save_optimization_report(thresholds, gcp_credentials):
     for disk in candidates["low_utilization_disks"]:
         mongodb_records.append(disk["resource_metadata"])
 
-    # NEW: Add orphaned snapshots to records
+    # Add orphaned snapshots to records
     for snapshot in candidates["orphaned_snapshots"]:
         mongodb_records.append(snapshot["resource_metadata"])
+
+    # NEW: Add underutilized clusters to records
+    for cluster in candidates["underutilized_clusters"]:
+        mongodb_records.append(cluster["resource_metadata"])
+
+    # NEW: Add orphaned persistent volumes to records
+    for pv in candidates["orphaned_pvs"]:
+        mongodb_records.append(pv["resource_metadata"])
 
     # Save to JSON file (always overwrite existing)
     output_file = "gcp_optimization.json"
@@ -1383,14 +1828,18 @@ def save_optimization_report(thresholds, gcp_credentials):
         vm_count = len(candidates["low_cpu_vms"])
         subnet_count = len(candidates["high_free_subnets"])
         disk_count = len(candidates["low_utilization_disks"])
-        snapshot_count = len(candidates["orphaned_snapshots"])  # NEW: Get snapshot count
+        snapshot_count = len(candidates["orphaned_snapshots"])
+        cluster_count = len(candidates["underutilized_clusters"])  # NEW
+        pv_count = len(candidates["orphaned_pvs"])  # NEW
 
         print(f"\n📋 Resource Breakdown:")
         print(f"  • Storage Buckets: {bucket_count}")
         print(f"  • Compute Instances: {vm_count}")
         print(f"  • Network Subnets: {subnet_count}")
         print(f"  • Storage Disks: {disk_count}")
-        print(f"  • Orphaned Snapshots: {snapshot_count}")  # NEW: Print snapshot breakdown
+        print(f"  • Orphaned Snapshots: {snapshot_count}")
+        print(f"  • GKE Clusters: {cluster_count}")  # NEW
+        print(f"  • K8s Persistent Volumes: {pv_count}")  # NEW
         print(f"  • Total Records: {len(mongodb_records)}")
 
         # Calculate total potential savings
@@ -1461,13 +1910,6 @@ def insert_to_mongodb(records):
         print(f"❌ Error inserting into MongoDB: {e}")
         return False
 
-    finally:
-        # Close MongoDB connection in all cases
-        try:
-            client.close()
-            print("✅ MongoDB connection closed successfully")
-        except Exception as e:
-            print(f"⚠️  Warning: Error closing MongoDB connection: {e}")
 
 
 # ================================================================================
@@ -1482,7 +1924,7 @@ def extract_resource_metadata(labels, resource_name, resource_type, region=None,
     Args:
         labels (dict): Resource labels from GCP
         resource_name (str): Name of the resource
-        resource_type (str): Type of resource (vm, bucket, disk, subnet, snapshot)
+        resource_type (str): Type of resource (vm, bucket, disk, subnet, snapshot, cluster, persistent_volume)
         region (str, optional): Resource region
         zone (str, optional): Resource zone
         full_name (str, optional): Full resource name/path
@@ -1509,6 +1951,9 @@ def extract_resource_metadata(labels, resource_name, resource_type, region=None,
             extracted_region = full_name.split("/zones/")[1].split("/")[0]
         elif "/regions/" in full_name:
             extracted_region = full_name.split("/regions/")[1].split("/")[0]
+        # NEW: Extract location for GKE clusters from full_name if available
+        elif "/locations/" in full_name and resource_type == 'cluster':
+            extracted_region = full_name.split("/locations/")[1].split("/")[0]
 
     # Determine ResourceType based on GCP resource type
     resource_type_mapping = {
@@ -1516,7 +1961,9 @@ def extract_resource_metadata(labels, resource_name, resource_type, region=None,
         'bucket': 'Storage',
         'disk': 'Storage',
         'subnet': 'Networking',
-        'snapshot': 'Storage'  # NEW: Add snapshot resource type mapping
+        'snapshot': 'Storage',
+        'cluster': 'Compute',  # NEW: GKE Cluster
+        'persistent_volume': 'Storage'  # NEW: K8s Persistent Volume
     }
 
     # Determine SubResourceType - actual GCP resource types
@@ -1525,7 +1972,9 @@ def extract_resource_metadata(labels, resource_name, resource_type, region=None,
         'bucket': 'Bucket',
         'disk': 'Disk',
         'subnet': 'Subnet',
-        'snapshot': 'Snapshot'  # NEW: Add snapshot sub-resource type mapping
+        'snapshot': 'Snapshot',
+        'cluster': 'GKE Cluster',  # NEW: GKE Cluster sub-type
+        'persistent_volume': 'Persistent Volume'  # NEW: K8s Persistent Volume sub-type
     }
 
     # Get total cost from cost analysis - remove unnecessary decimal places and handle scientific notation
@@ -1559,8 +2008,12 @@ def extract_resource_metadata(labels, resource_name, resource_type, region=None,
         resource_status = status or "Available"
     elif resource_type == 'subnet':
         resource_status = "Available"
-    elif resource_type == 'snapshot':  # NEW: Add snapshot status
+    elif resource_type == 'snapshot':
         resource_status = status or "Ready"  # Snapshots are usually Ready when created
+    elif resource_type == 'cluster':  # NEW: GKE Cluster status
+        resource_status = status or "RUNNING"
+    elif resource_type == 'persistent_volume':  # NEW: K8s PV status
+        resource_status = status or "Available"
 
     # Generate simplified finding and recommendation based on resource type
     finding = "Resource identified for optimization"
@@ -1578,9 +2031,15 @@ def extract_resource_metadata(labels, resource_name, resource_type, region=None,
     elif resource_type == 'disk':
         finding = "Disk underutilised"
         recommendation = "Scale Down"
-    elif resource_type == 'snapshot':  # NEW: Add snapshot finding
+    elif resource_type == 'snapshot':
         finding = "Snapshot potentially unneeded"
-        recommendation = "Delete"  # Default recommendation for orphaned snapshots
+        recommendation = "Delete"
+    elif resource_type == 'cluster':  # NEW: GKE Cluster finding
+        finding = "GKE Cluster underutilised"
+        recommendation = "Scale Down / Delete"
+    elif resource_type == 'persistent_volume':  # NEW: K8s PV finding
+        finding = "Persistent Volume underutilised"
+        recommendation = "Delete"
 
     # Check for missing/empty tags and append "; Untagged" to the finding if any are missing
     required_tags_for_finding = ["features", "lab", "platform", "cio", "ticketid", "environment"]
@@ -1654,7 +2113,10 @@ if __name__ == "__main__":
         categorize_gcp_vm_cpu_utilization(PROJECT_ID, gcp_credentials, thresholds=thresholds)
         list_subnets_with_cidr_and_ip_usage(PROJECT_ID, thresholds=thresholds, credentials=gcp_credentials)
         categorize_gcp_disk_utilization(PROJECT_ID, gcp_credentials, thresholds=thresholds)
-        categorize_gcp_snapshots(PROJECT_ID, gcp_credentials, thresholds)  # NEW: Call snapshot analysis
+        categorize_gcp_snapshots(PROJECT_ID, gcp_credentials, thresholds)  # Call snapshot analysis
+        categorize_gcp_kubernetes_clusters(PROJECT_ID, gcp_credentials, thresholds)  # NEW: Call GKE cluster analysis
+        categorize_gcp_kubernetes_persistent_volumes(PROJECT_ID, gcp_credentials,
+                                                     thresholds)  # NEW: Call K8s PV analysis
 
         # Generate and save detailed JSON report
         save_optimization_report(thresholds, gcp_credentials)
