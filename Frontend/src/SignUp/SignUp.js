@@ -95,7 +95,7 @@ const SignUp = () => {
             onChange={handleChange}
           />
         </div>
-        <button type="submit" className="signin-button" disabled={submitting}>
+        <button type="submit" className="signup-button" disabled={submitting}>
           {submitting ? "Signing Up..." : "Sign Up"}
         </button>
         <div className="signup-redirect">
@@ -103,9 +103,9 @@ const SignUp = () => {
             type="button"
             className="signup-link"
             onClick={() => navigate("/signin")}
-            style={{ marginTop: "16px", background: "none", border: "none", color: "#007bff", cursor: "pointer", textDecoration: "underline" }}
+            style={{ marginTop: "16px", background: "none", border: "none", color: "#007bff", cursor: "pointer" }}
           >
-            Sign Up?
+            Sign In?
           </button>
         </div>
       </form>
