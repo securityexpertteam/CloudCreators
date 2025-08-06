@@ -123,7 +123,7 @@ html, body {
 .signin-button {
   width: 100%;
   padding: 12px;
-  background: linear-gradient(90deg, #00b894 0%, #00cec9 100%);
+  background: linear-gradient(90deg, #7c3aed 0%, #6366f1 100%);
   border: none;
   color: #fff;
   font-weight: 600;
@@ -157,7 +157,7 @@ html, body {
 
 /* Main button style */
 .signin-btn, .signup-btn {
-  background: linear-gradient(90deg, #0984e3 0%, #00b894 100%);
+  background: linear-gradient(90deg, #7c3aed 0%, #6366f1 100%);
   color: #fff;
   font-weight: 700;
   border: none;
@@ -176,7 +176,7 @@ html, body {
 
 /* Hover effect */
 .signin-btn:hover, .signup-btn:hover {
-  background: linear-gradient(90deg, #00b894 0%, #00cec9 100%);
+  background: linear-gradient(90deg, #2563eb 0%, #1e40af 100%);
 }
 
 /* Disabled state */
@@ -185,4 +185,43 @@ html, body {
   color: #636e72;
   cursor: not-allowed;
   opacity: 1;
+}
+
+/* Add to: c:\Users\ashis\OneDrive\Desktop\cloudopt\latest(05-08)\CloudCreators\Frontend\src\SignIn\SignIn.css */
+.signin-actions {
+  display: flex;
+  gap: 16px;
+  justify-content: center;
+  margin-top: 24px;
+}
+
+.signin-button,
+.signup-button {
+  width: 140px;
+  padding: 12px;
+  background: linear-gradient(90deg, #00b894 0%, #00cec9 100%);
+  border: none;
+  color: #fff;
+  font-weight: 600;
+  border-radius: 10px;
+  cursor: pointer;
+  font-size: 16px;
+  transition: opacity 0.2s, background 0.2s;
+  box-shadow: 0 2px 6px rgba(0,190,148,0.10);
+  text-align: center;
+  display: inline-block;
+}
+
+.signin-button:hover,
+.signup-button:hover,
+.signin-button:focus,
+.signup-button:focus {
+  background: linear-gradient(90deg, #512da8, #1976d2);
+  opacity: 0.92;
+}
+
+.signin-button:disabled,
+.signup-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
