@@ -116,7 +116,7 @@ def fetch_credentials(mongo_uri, db_name, collection_name, email_to_find, cloud_
         
         elif cloud_name == 'GCP':
             # Step 1: Authenticate using a local JSON key with Secret Manager access
-            #AUTH_JSON_PATH = "Creds//pro-plasma-465515-k1-273ccacfba4c.json"
+            
            
             project_id = managementUnit_Id
             AUTH_JSON_PATH = f"Creds//{project_id}.json"
@@ -270,3 +270,4 @@ except KeyboardInterrupt:
 #finally:
 
     #client.close()
+
