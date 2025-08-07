@@ -83,6 +83,7 @@ def fetch_credentials(mongo_uri, db_name, collection_name, email_to_find, cloud_
         "managementUnitId": managementUnit_Id
     })
 
+
     if record:
         if cloud_name == 'Azure':
             vault_url = f"https://{vault_name}.vault.azure.net/"
@@ -115,7 +116,11 @@ def fetch_credentials(mongo_uri, db_name, collection_name, email_to_find, cloud_
         
         elif cloud_name == 'GCP':
             # Step 1: Authenticate using a local JSON key with Secret Manager access
-            AUTH_JSON_PATH = "Creds//pro-plasma-465515-k1-273ccacfba4c.json"
+            #AUTH_JSON_PATH = "Creds//pro-plasma-465515-k1-273ccacfba4c.json"
+           
+            project_id = managementUnit_Id
+            AUTH_JSON_PATH = f"Creds//{project_id}.json"
+
             # 🔒 This key must have secretAccessor role
             if not os.access(AUTH_JSON_PATH, os.R_OK):
                 print("No GCP Creds file found")
@@ -126,7 +131,7 @@ def fetch_credentials(mongo_uri, db_name, collection_name, email_to_find, cloud_
             client = secretmanager.SecretManagerServiceClient(credentials=credentials)
 
             # Step 3: Define secret name
-            project_id = managementUnit_Id
+            
             #secret_id = "mygcpvaultreader1-json"
             version_id = "latest"
             #my-gcpsrv1
