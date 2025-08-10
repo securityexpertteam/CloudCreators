@@ -16,16 +16,22 @@ from googleapiclient.errors import HttpError  # Import HttpError for potential A
 # Ensure stdout is UTF-8 for proper printing
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
 
+SKU_CACHE = {}
+BILLING_SERVICE_NAME = ""
+
+
 # ================================================================================
 # ARGUMENT PARSING
 # ================================================================================
 parser = argparse.ArgumentParser(description="GCP Resource Optimization Script")
+# Use '--client_email' consistently for the service account
 parser.add_argument("--client_email", required=True, help="GCP Service Account Client Email (for authentication)")
-parser.add_argument("--private_key", required=True,
-                    help="GCP Service Account Private Key. Replace newlines with '\\n'.")
+parser.add_argument("--private_key", required=True, help="GCP Service Account Private Key. Replace newlines with '\\n'.")
 parser.add_argument("--project_id", required=True, help="GCP Project ID to analyze")
+# Use '--user_email' consistently for the user's email
 parser.add_argument("--user_email", required=True, help="User Email for fetching configs from MongoDB and for reports")
 args = parser.parse_args()
+
 
 PROJECT_ID = args.project_id
 USER_EMAIL = args.user_email  # Use the email from command line consistently
@@ -48,10 +54,18 @@ try:
         "private_key": pk_string,
         "client_email": args.client_email,
         "token_uri": "https://oauth2.googleapis.com/token",
+        "scopes": ["https://www.googleapis.com/auth/cloud-platform"]
     }
-    # Create a single, reusable credentials object from the arguments
     gcp_credentials = service_account.Credentials.from_service_account_info(credentials_info)
-    print("✅ Authentication successful. Credentials object created.")
+    print("✅ Authentication successful.")
+
+    # Initialize all necessary clients with credentials
+    compute = discovery.build('compute', 'v1', credentials=gcp_credentials)
+    run_admin_client = discovery.build('run', 'v1', credentials=gcp_credentials)
+    monitoring_client = monitoring_v3.MetricServiceClient(credentials=gcp_credentials)
+    asset_client = asset_v1.AssetServiceClient(credentials=gcp_credentials)
+    billing_client = discovery.build('cloudbilling', 'v1', credentials=gcp_credentials)
+    print("✅ All GCP clients initialized.")
 
 except Exception as e:
     print(f"❌ Critical Error: Failed to create credentials from arguments. Please check your inputs. Error: {e}")
@@ -81,6 +95,274 @@ MONGODB_PORT = 27017  # Change this to your MongoDB port
 MONGODB_DATABASE = "myDB"  # Change this to your database name
 MONGODB_COLLECTION = "Cost_Insights"  # Change this to your collection name
 
+
+def initialize_billing_info():
+    """Fetches the service name for billing lookups, targeting Compute Engine."""
+    global BILLING_SERVICE_NAME
+    if BILLING_SERVICE_NAME:
+        return
+
+    try:
+        print("🔍 Initializing billing information...")
+        request = billing_client.services().list()
+        response = request.execute()
+
+        # A more reliable method is to find the service for Compute Engine,
+        # as most costs are derived from it.
+        for service in response.get('services', []):
+            if service.get('displayName') == 'Compute Engine':
+                BILLING_SERVICE_NAME = service['name']
+                break
+
+        if not BILLING_SERVICE_NAME:
+            # Fallback if Compute Engine isn't found for some reason
+            if response.get('services'):
+                BILLING_SERVICE_NAME = response['services'][0]['name']
+            else:
+                raise Exception(
+                    "Could not find any billing services. Ensure the Cloud Billing API is enabled and permissions are correct.")
+
+        print(f"✅ Billing Service Name for lookups set to: {BILLING_SERVICE_NAME}")
+
+    except HttpError as e:
+
+        error_details = json.loads(e.content.decode())
+        if "SERVICE_DISABLED" in str(error_details):
+            print("\n❌ CRITICAL ERROR: The Cloud Billing API is not enabled for this project.")
+            print(
+                "Please enable it by visiting: https://console.cloud.google.com/apis/library/cloudbilling.googleapis.com")
+        else:
+            print(f"❌ HTTP Error initializing billing: {e}")
+        exit(1)
+    except Exception as e:
+        print(f"❌ Error initializing billing: {e}")
+        exit(1)
+
+def get_sku_price(service_name, sku_description_filter, region="global"):
+    """
+    Fetches the price for a given SKU description and caches it.
+    Returns price per unit and the unit (e.g., "per hour", "per gibibyte month").
+    """
+    cache_key = (service_name, sku_description_filter, region)
+    if cache_key in SKU_CACHE:
+        return SKU_CACHE[cache_key]
+
+    if not BILLING_SERVICE_NAME:
+        initialize_billing_info()
+
+    try:
+        # Construct the parent service name for the SKU lookup
+        service_lookup_name = f"services/{service_name}"
+
+        # Fetch all SKUs for the service (e.g., Compute Engine)
+        all_skus = []
+        page_token = None
+        while True:
+            request = billing_client.services().skus().list(parent=service_lookup_name, pageToken=page_token)
+            response = request.execute()
+            all_skus.extend(response.get('skus', []))
+            page_token = response.get('nextPageToken')
+            if not page_token:
+                break
+
+        for sku in all_skus:
+            # Match based on description and region
+            if sku_description_filter.lower() in sku.get('description', '').lower() and \
+                    (region in sku.get('serviceRegions', []) or region == "global"):
+                pricing_info = sku.get('pricingInfo', [{}])[0]
+                pricing_expression = pricing_info.get('pricingExpression', {})
+
+                # Find the first price tier
+                price_nanos = pricing_expression.get('tieredRates', [{}])[0].get('unitPrice', {}).get('nanos', 0)
+                price_usd = price_nanos / 1_000_000_000
+
+                usage_unit = pricing_expression.get('usageUnitDescription', 'unit')
+
+                # Cache the result
+                SKU_CACHE[cache_key] = (price_usd, usage_unit)
+                return price_usd, usage_unit
+
+    except Exception as e:
+        print(f"    ⚠️ Could not fetch price for SKU '{sku_description_filter}': {e}")
+
+    # Cache failure case
+    SKU_CACHE[cache_key] = (0.0, "unknown")
+    return 0.0, "unknown"
+
+
+def get_resource_cost(resource_type, config):
+    """
+    Calculates the monthly cost for a resource using dynamic pricing.
+    """
+    # Service IDs for Billing API. Find these via `gcloud billing services list`
+    compute_service_id = "6F81-5844-456A"
+    run_service_id = "9662-B5DA-4595"
+    storage_service_id = "6F81-5844-456A"  # Often shared with compute
+
+    cost_per_month = 0.0
+
+    try:
+        if resource_type == 'vm':
+            # Example: e2-medium -> "E2 Instance Core" and "E2 Instance Ram"
+            instance_family = config['machine_type'].split('-')[0].upper()
+
+            # Get CPU Cost
+            cpu_sku_filter = f"{instance_family} Instance Core running in"
+            cpu_price_per_hour, _ = get_sku_price(compute_service_id, cpu_sku_filter, config['region'])
+
+            # Get Memory Cost
+            ram_sku_filter = f"{instance_family} Instance Ram running in"
+            ram_price_per_hour_gb, _ = get_sku_price(compute_service_id, ram_sku_filter, config['region'])
+
+            cost_per_month = (config['cpu_cores'] * cpu_price_per_hour + config[
+                'memory_gb'] * ram_price_per_hour_gb) * 730  # 730 hours in a month
+
+        elif resource_type == 'disk':
+            disk_type_map = {
+                'pd-standard': 'Standard',
+                'pd-balanced': 'Balanced',
+                'pd-ssd': 'SSD'
+            }
+            disk_type_name = disk_type_map.get(config['disk_type'], 'Standard')
+            # Example: "SSD backed PD Capacity"
+            disk_sku_filter = f"{disk_type_name} backed PD Capacity"
+            disk_price_per_gb_month, _ = get_sku_price(storage_service_id, disk_sku_filter, config['region'])
+            cost_per_month = config['size_gb'] * disk_price_per_gb_month
+
+        elif resource_type == 'cloud_run_idle':  # Cost for a min-instance
+            # Get CPU Cost
+            cpu_sku_filter = "Cloud Run CPU Allocation"
+            cpu_price_per_sec, _ = get_sku_price(run_service_id, cpu_sku_filter, config['region'])
+
+            # Get Memory Cost
+            ram_sku_filter = "Cloud Run Memory Allocation"
+            ram_price_per_sec_gb, _ = get_sku_price(run_service_id, ram_sku_filter, config['region'])
+
+            cost_per_second = (config['cpu'] * cpu_price_per_sec) + (config['memory_gb'] * ram_price_per_sec_gb)
+            cost_per_month = cost_per_second * 60 * 60 * 730
+
+
+    except Exception as e:
+        print(f"    ⚠️ Cost calculation failed for {resource_type} {config.get('name', '')}: {e}")
+        return 0.0
+
+    return cost_per_month
+
+
+def analyze_cloud_run_optimization_opportunities(project_id, credentials):
+    """Analyzes Cloud Run services for right-sizing, concurrency, and min-instance costs."""
+    print("\n🏃 Analyzing Cloud Run Services for Advanced Optimization...")
+    print("=" * 60)
+
+    optimization_candidates = []
+
+    try:
+        # The parent location '-' indicates a global search for all services in the project.
+        parent = f"projects/{project_id}/locations/-"
+        request = run_admin_client.projects().locations().services().list(parent=parent)
+        response = request.execute()
+        services = response.get('items', [])
+
+        if not services:
+            print("  ✅ No Cloud Run services found.")
+            return []
+
+        print(f"  Found {len(services)} Cloud Run services to analyze.")
+
+        for service in services:
+            service_name = service['metadata']['name']
+            location = service['metadata']['labels']['cloud.googleapis.com/location']
+            service_link = service['metadata'].get('selfLink',
+                                                   f"projects/{project_id}/locations/{location}/services/{service_name}")
+            all_findings_for_service = []
+
+            template = service['spec']['template']
+            annotations = template['metadata'].get('annotations', {})
+
+            # --- 1. Min Instances Analysis (Cost of Idle) ---
+            min_instances = int(annotations.get('autoscaling.knative.dev/minScale', 0))
+
+            if min_instances > 0:
+                container = template['spec']['containers'][0]
+                cpu_limit_str = container['resources']['limits'].get('cpu', '1000m')
+                cpu_limit = float(cpu_limit_str.replace('m', '')) / 1000 if 'm' in cpu_limit_str else float(
+                    cpu_limit_str)
+
+                mem_limit_str = container['resources']['limits'].get('memory', '512Mi')
+                mem_value = int(''.join(filter(str.isdigit, mem_limit_str)))
+                mem_limit_gb = mem_value / 1024 if 'Mi' in mem_limit_str else mem_value
+
+                idle_cost_config = {
+                    'name': service_name,
+                    'cpu': cpu_limit,
+                    'memory_gb': mem_limit_gb,
+                    'region': location
+                }
+                idle_cost = get_resource_cost('cloud_run_idle', idle_cost_config) * min_instances
+
+                metadata = extract_resource_metadata(
+                    labels=service['metadata'].get('labels', {}),
+                    resource_name=service_name,
+                    resource_type='cloud_run',
+                    region=location,
+                    full_name=f"//run.googleapis.com/{service_link}",
+                    status="ACTIVE",
+                    cost_analysis={'total_cost_usd': idle_cost},
+                    utilization_data={'finding': f'Idle cost for {min_instances} min-instance(s)'},
+                    is_orphaned=False
+                )
+                metadata['Recommendation'] = "Set min-instances to 0"
+
+                all_findings_for_service.append({
+                    "type": "Idle Cost",
+                    "description": f"Service has min-instances set to {min_instances}, incurring an estimated monthly idle cost of ${idle_cost:.2f}.",
+                    "recommendation": "Set min-instances to 0 if cold starts are acceptable.",
+                    "monthly_savings": idle_cost,
+                    "resource_metadata": metadata
+                })
+
+            # --- 2. Concurrency Analysis ---
+            concurrency = template['spec'].get('containerConcurrency', 80)
+            if concurrency > 0 and concurrency < 10:
+                metadata = extract_resource_metadata(
+                    labels=service['metadata'].get('labels', {}),
+                    resource_name=service_name,
+                    resource_type='cloud_run',
+                    region=location,
+                    full_name=f"//run.googleapis.com/{service_link}",
+                    status="ACTIVE",
+                    cost_analysis={'total_cost_usd': 0.0},  # No direct cost saving
+                    utilization_data={'finding': f'Low concurrency set to {concurrency}'},
+                    is_orphaned=False
+                )
+                metadata['Recommendation'] = "Increase concurrency if I/O bound"
+                all_findings_for_service.append({
+                    "type": "Low Concurrency",
+                    "description": f"Concurrency is set to a low value of {concurrency}. This may cause more instances to spin up than necessary.",
+                    "recommendation": "Review if this application is truly CPU-bound. If I/O bound, consider increasing concurrency.",
+                    "monthly_savings": 0.0,
+                    "resource_metadata": metadata
+                })
+
+            # --- 3. Right-Sizing Analysis (CPU/Memory) ---
+            # This part remains a placeholder as it requires more complex metric analysis,
+            # but it's structured to be added in the future.
+
+            if all_findings_for_service:
+                print(f"  ⚠️  Found {len(all_findings_for_service)} optimization opportunities for '{service_name}'")
+                optimization_candidates.extend(all_findings_for_service)
+            else:
+                print(f"  ✅ '{service_name}' appears well-configured.")
+
+    except HttpError as e:
+        if "run.googleapis.com has not been used" in str(e):
+            print("  ✅ Cloud Run API is not used in this project, skipping.")
+        else:
+            print(f"❌ Error analyzing Cloud Run services: {e}")
+    except Exception as e:
+        print(f"❌ An unexpected error occurred during Cloud Run analysis: {e}")
+
+    return optimization_candidates
 
 def get_thresholds_from_mongodb(email, collection_name="thresholds"):
     """
@@ -1120,12 +1402,10 @@ def categorize_gcp_kubernetes_clusters(project_id, credentials, thresholds):
         locations_resp = list_locations_req.execute()
 
         for location_data in locations_resp.get('locations', []):
-            location_name = location_data['name'].split('/')[-1]  # e.g., us-central1 or us-central1-a
-
+            location_name = location_data['name'].split('/')[-1]
             try:
                 list_clusters_req = container_client.projects().locations().clusters().list(
-                    projectId=project_id,
-                    location=location_name
+                    parent=f"projects/{project_id}/locations/{location_name}"
                 )
                 clusters_resp = list_clusters_req.execute()
 
@@ -1202,6 +1482,147 @@ def categorize_gcp_kubernetes_clusters(project_id, credentials, thresholds):
 
     return underutilized_clusters
 
+
+def categorize_gcp_cloud_run(project_id, credentials, thresholds):
+    """Analyzes Cloud Run services for inactivity."""
+    inactivity_threshold_days = thresholds.get('cloud_run_inactivity_days', 30)
+    print(f"\n🏃 Analyzing Cloud Run Services (Inactive if no requests in >{inactivity_threshold_days} days)")
+    print("=" * 60)
+
+    inactive_services = []
+    total_services = 0
+    monitoring_client = monitoring_v3.MetricServiceClient(credentials=credentials)
+    asset_client = asset_v1.AssetServiceClient(credentials=credentials)
+    scope = f"projects/{project_id}"
+
+    try:
+        response = asset_client.search_all_resources(
+            request={"scope": scope, "asset_types": ["run.googleapis.com/Service"]}
+        )
+
+        for resource in response:
+            total_services += 1
+            service_name = resource.display_name
+            location = resource.location
+            service_link = resource.name
+
+            end_time = datetime.now(UTC)
+            start_time = end_time - timedelta(days=inactivity_threshold_days)
+            interval = monitoring_v3.TimeInterval(end_time=end_time, start_time=start_time)
+
+            filter_str = f'metric.type="run.googleapis.com/request_count" AND resource.labels.service_name="{service_name}" AND resource.labels.location="{location}"'
+            time_series_request = monitoring_v3.ListTimeSeriesRequest(
+                name=f"projects/{project_id}",
+                filter=filter_str,
+                interval=interval,
+                view=monitoring_v3.ListTimeSeriesRequest.TimeSeriesView.HEADERS,
+            )
+
+            results = monitoring_client.list_time_series(request=time_series_request)
+            request_count = sum(1 for _ in results)
+
+            if request_count == 0:
+                print(f"  ⚠️  {service_name} (Location: {location}) - Inactive")
+
+                # FIX: Create the full metadata record for MongoDB
+                metadata = extract_resource_metadata(
+                    labels=dict(resource.labels) if hasattr(resource, 'labels') and resource.labels else {},
+                    resource_name=service_name,
+                    resource_type='cloud_run',
+                    region=location,
+                    full_name=service_link,
+                    status="INACTIVE",
+                    cost_analysis={'total_cost_usd': 0.0},  # Inactivity itself has no cost, min-instances does
+                    utilization_data={'finding': 'Inactive for over 30 days'},
+                    is_orphaned=True  # Treat as orphaned due to inactivity
+                )
+                metadata['Recommendation'] = "Delete if no longer needed"
+
+                inactive_services.append({
+                    'name': service_name,
+                    'location': location,
+                    'full_name': service_link,
+                    'labels': dict(resource.labels) if hasattr(resource, 'labels') and resource.labels else {},
+                    'resource_metadata': metadata  # Attach the full record
+                })
+            else:
+                print(f"  • {service_name} (Location: {location}) - Active")
+
+        print(f"\nTotal Cloud Run services analyzed: {total_services}")
+        if not inactive_services:
+            print("  ✅ No inactive Cloud Run services found.")
+
+    except Exception as e:
+        print(f"❌ Error analyzing Cloud Run services: {e}")
+
+    return inactive_services
+
+# ================================================================================
+# NEW: INSTANCE GROUP ANALYSIS FUNCTION
+# ================================================================================
+def categorize_gcp_instance_groups(project_id, credentials, thresholds):
+    """Analyzes Instance Group Managers for underutilization (e.g., empty or low instance count)."""
+    min_instance_threshold = thresholds.get('instance_group_min_instances', 1)
+
+    print(f"\n👨‍👩‍👧‍👦 Analyzing Instance Groups (Flagged if target instances < {min_instance_threshold})")
+    print("=" * 60)
+
+    underutilized_groups = []
+    total_groups = 0
+
+    try:
+        request = compute.instanceGroupManagers().aggregatedList(project=project_id)
+        while request is not None:
+            response = request.execute()
+            for scope, data in response.get('items', {}).items():
+                if 'instanceGroupManagers' in data:
+                    for igm in data['instanceGroupManagers']:
+                        total_groups += 1
+                        igm_name = igm.get('name')
+                        location = igm.get('zone', igm.get('region', 'unknown')).split('/')[-1]
+                        target_instances = igm.get('targetSize', 0)
+
+                        if target_instances < min_instance_threshold:
+                            print(
+                                f"  ⚠️  {igm_name} (Location: {location}) - Underutilized ({target_instances} target instances)")
+
+                            # Create the full metadata record for MongoDB
+                            metadata = extract_resource_metadata(
+                                labels={},  # IGMs don't have direct labels
+                                resource_name=igm_name,
+                                resource_type='instance_group',  # A new resource type
+                                region=location,
+                                full_name=igm.get('selfLink'),
+                                status="ACTIVE",
+                                cost_analysis={'total_cost_usd': 0.0},  # IGM itself has no cost
+                                utilization_data={'target_size': target_instances},
+                                is_orphaned=(target_instances == 0)
+                            )
+                            metadata['Recommendation'] = "Delete if not needed"
+
+                            underutilized_groups.append({
+                                "name": igm_name,
+                                "location": location,
+                                "instance_count": target_instances,
+                                "full_name": igm.get('selfLink'),
+                                "labels": {},
+                                "resource_metadata": metadata  # Add the metadata to the finding
+                            })
+                        else:
+                            print(
+                                f"  • {igm_name} (Location: {location}) - Active ({target_instances} target instances)")
+
+            request = compute.instanceGroupManagers().aggregatedList_next(previous_request=request,
+                                                                          previous_response=response)
+
+        print(f"\nTotal instance groups analyzed: {total_groups}")
+        if not underutilized_groups:
+            print("  ✅ No underutilized instance groups found.")
+
+    except Exception as e:
+        print(f"❌ Error analyzing instance groups: {e}")
+
+    return underutilized_groups
 
 def categorize_gcp_kubernetes_persistent_volumes(project_id, credentials, thresholds):
     """
@@ -1770,45 +2191,52 @@ def collect_optimization_candidates(project_id, credentials, thresholds):
     return optimization_candidates
 
 
-def save_optimization_report(thresholds, gcp_credentials):
+def save_optimization_report(candidates):
     """
-    Generate and save MongoDB-ready resource records as JSON array.
+    Generates and saves MongoDB-ready resource records from a pre-compiled dictionary of candidates.
+    This function is responsible for report generation ONLY and does not perform any analysis.
     """
     print(f"\n💾 Generating MongoDB-Ready Resource Records...")
     print("=" * 60)
 
-    # Collect optimization candidates
-    candidates = collect_optimization_candidates(PROJECT_ID, gcp_credentials, thresholds)
-
-    # Create flat array of resource metadata for MongoDB
     mongodb_records = []
+    category_counts = {}
 
-    # Extract resource_metadata from each resource type
-    for bucket in candidates["low_utilization_buckets"]:
-        mongodb_records.append(bucket["resource_metadata"])
+    # --- Unified Processing Loop ---
+    # Iterates through all categories of findings passed in the 'candidates' dictionary.
+    for category, items in candidates.items():
+        if not items:
+            category_counts[category] = 0
+            continue  # Skip empty categories
 
-    for vm in candidates["low_cpu_vms"]:
-        mongodb_records.append(vm["resource_metadata"])
+        category_counts[category] = len(items)
 
-    for subnet in candidates["high_free_subnets"]:
-        mongodb_records.append(subnet["resource_metadata"])
+        if category == "advanced_cloud_run":
+            # This category has a unique structure, so it needs special handling.
+            for item in items:
+                for finding in item.get("findings", []):
+                    # Create a distinct metadata record for each individual finding.
+                    metadata = extract_resource_metadata(
+                        labels={},  # Labels are not readily available in this specific analysis
+                        resource_name=item['name'],
+                        resource_type='cluster',  # Treat as a compute-like resource for categorization
+                        region=item['location'],
+                        full_name=f"//run.googleapis.com/projects/{PROJECT_ID}/locations/{item['location']}/services/{item['name']}",
+                        status="RUNNING",
+                        cost_analysis={"total_cost_usd": finding.get("monthly_savings", 0.0)},
+                        utilization_data={'finding_type': finding['type'], 'description': finding['description']},
+                        is_orphaned=False
+                    )
+                    metadata['Finding'] = finding['type']
+                    metadata['Recommendation'] = finding['recommendation']
+                    mongodb_records.append(metadata)
+        else:
+            # This handles all other standard resource types.
+            for item in items:
+                if "resource_metadata" in item:
+                    mongodb_records.append(item["resource_metadata"])
 
-    for disk in candidates["low_utilization_disks"]:
-        mongodb_records.append(disk["resource_metadata"])
-
-    # Add orphaned snapshots to records
-    for snapshot in candidates["orphaned_snapshots"]:
-        mongodb_records.append(snapshot["resource_metadata"])
-
-    # NEW: Add underutilized clusters to records
-    for cluster in candidates["underutilized_clusters"]:
-        mongodb_records.append(cluster["resource_metadata"])
-
-    # NEW: Add orphaned persistent volumes to records
-    for pv in candidates["orphaned_pvs"]:
-        mongodb_records.append(pv["resource_metadata"])
-
-    # Save to JSON file (always overwrite existing)
+    # --- Save the consolidated records to the JSON file ---
     output_file = "gcp_optimization.json"
     try:
         if os.path.exists(output_file):
@@ -1816,45 +2244,31 @@ def save_optimization_report(thresholds, gcp_credentials):
         else:
             print(f"  📝 Creating new report file: {output_file}")
 
-        # Write MongoDB-ready records array (mode 'w' overwrites existing file)
         with open(output_file, 'w', encoding='utf-8') as f:
             json.dump(mongodb_records, f, indent=2, default=str, ensure_ascii=False)
 
         print(f"  ✅ MongoDB-ready records saved to: {output_file}")
-        print(f"  📊 Total records for MongoDB insertion: {len(mongodb_records)}")
+        print(f"  📊 Total actionable records generated: {len(mongodb_records)}")
 
-        # Print breakdown by resource type
-        bucket_count = len(candidates["low_utilization_buckets"])
-        vm_count = len(candidates["low_cpu_vms"])
-        subnet_count = len(candidates["high_free_subnets"])
-        disk_count = len(candidates["low_utilization_disks"])
-        snapshot_count = len(candidates["orphaned_snapshots"])
-        cluster_count = len(candidates["underutilized_clusters"])  # NEW
-        pv_count = len(candidates["orphaned_pvs"])  # NEW
-
+        # --- Print a dynamic breakdown by resource type ---
         print(f"\n📋 Resource Breakdown:")
-        print(f"  • Storage Buckets: {bucket_count}")
-        print(f"  • Compute Instances: {vm_count}")
-        print(f"  • Network Subnets: {subnet_count}")
-        print(f"  • Storage Disks: {disk_count}")
-        print(f"  • Orphaned Snapshots: {snapshot_count}")
-        print(f"  • GKE Clusters: {cluster_count}")  # NEW
-        print(f"  • K8s Persistent Volumes: {pv_count}")  # NEW
+        for category, count in category_counts.items():
+            # Make category names more readable for the report
+            friendly_name = category.replace('_', ' ').title()
+            print(f"  • {friendly_name}: {count}")
         print(f"  • Total Records: {len(mongodb_records)}")
 
-        # Calculate total potential savings
-        total_potential_savings = sum([
-            candidate.get("cost_analysis", {}).get("total_cost_usd", 0)
-            for resource_list in candidates.values()
-            for candidate in resource_list
-        ])
-        print(f"  💰 Total estimated monthly savings: ${total_potential_savings:.2f} USD")
+        # --- Calculate total potential savings from the final records list ---
+        total_potential_savings = sum(
+            record.get("cost_analysis", {}).get("total_cost_usd", 0)
+            for record in mongodb_records if record.get("cost_analysis")
+        )
+        print(f"  💰 Total estimated monthly savings from all findings: ${total_potential_savings:.2f} USD")
 
     except Exception as e:
         print(f"  ❌ Error saving records: {e}")
         print("Records data preview:")
         print(json.dumps(mongodb_records[:2] if mongodb_records else [], indent=2, default=str)[:500] + "...")
-
 
 def insert_to_mongodb(records):
     """Insert GCP optimization records into MongoDB."""
@@ -2096,46 +2510,45 @@ def extract_resource_metadata(labels, resource_name, resource_type, region=None,
 # ================================================================================
 
 if __name__ == "__main__":
-    print("🚀 GCP Resource Optimization Analysis")
-    print("=" * 80)
-    print(f"Project: {PROJECT_ID}")
-    print(f"User Email: {USER_EMAIL}")
-    print(f"Analysis Date: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-    print(f"Disk Analysis: Enabled")
-    print("=" * 80)
-
-    # Fetch dynamic thresholds from MongoDB
-    thresholds = get_thresholds_from_mongodb(USER_EMAIL, collection_name="standardConfigsDb")
-
     try:
-        # Run comprehensive resource analysis
-        categorize_gcp_resources(PROJECT_ID, gcp_credentials, bucket_quota_gb=100, thresholds=thresholds)
-        categorize_gcp_vm_cpu_utilization(PROJECT_ID, gcp_credentials, thresholds=thresholds)
-        list_subnets_with_cidr_and_ip_usage(PROJECT_ID, thresholds=thresholds, credentials=gcp_credentials)
-        categorize_gcp_disk_utilization(PROJECT_ID, gcp_credentials, thresholds=thresholds)
-        categorize_gcp_snapshots(PROJECT_ID, gcp_credentials, thresholds)  # Call snapshot analysis
-        categorize_gcp_kubernetes_clusters(PROJECT_ID, gcp_credentials, thresholds)  # NEW: Call GKE cluster analysis
-        categorize_gcp_kubernetes_persistent_volumes(PROJECT_ID, gcp_credentials,
-                                                     thresholds)  # NEW: Call K8s PV analysis
+        # Step 1: Initialize Billing API and fetch custom thresholds from MongoDB
+        initialize_billing_info()
+        thresholds = get_thresholds_from_mongodb(USER_EMAIL)
 
-        # Generate and save detailed JSON report
-        save_optimization_report(thresholds, gcp_credentials)
-        # Insert records to MongoDB if available
-        try:
-            with open("gcp_optimization.json", 'r', encoding='utf-8') as f:
-                records = json.load(f)
-            insert_to_mongodb(records)
-        except Exception as e:
-            print(f"⚠️  Could not insert to MongoDB: {e}")
+        print("\n🏁 Starting GCP resource analysis... This may take several minutes.")
+        print("=" * 80)
+
+        # Step 2: Run ALL analyses ONCE and collect all results into a single dictionary.
+        # This approach avoids redundant API calls and ensures all data is processed.
+
+        # 'collect_optimization_candidates' gets the bulk of the standard resources.
+        all_candidates = collect_optimization_candidates(PROJECT_ID, gcp_credentials, thresholds)
+
+        # Now, execute the specific analyses that were previously missed or had their results lost
+        # and add their findings to the main 'all_candidates' dictionary.
+
+        # A) Find Cloud Run services that are completely inactive.
+        all_candidates["inactive_cloud_run"] = categorize_gcp_cloud_run(PROJECT_ID, gcp_credentials, thresholds)
+        all_candidates["underutilized_instance_groups"] = categorize_gcp_instance_groups(PROJECT_ID, gcp_credentials,
+                                                                                         thresholds)
+        all_candidates["advanced_cloud_run"] = analyze_cloud_run_optimization_opportunities(PROJECT_ID, gcp_credentials)
+
+        # Step 3: Generate the final JSON report using the complete set of collected data.
+        # The 'all_candidates' dictionary now contains every finding from every analysis.
+        save_optimization_report(all_candidates)
+
+        # Step 4: (Optional) Insert the generated JSON report into MongoDB.
+        # To enable, uncomment the following lines and ensure the function is defined correctly.
+        print("\n💾 Inserting records into MongoDB...")
+        with open("gcp_optimization.json", 'r', encoding='utf-8') as f:
+            records_to_insert = json.load(f)
+        insert_to_mongodb(records_to_insert)
 
         print("\n" + "=" * 80)
-        print("✅ Analysis Complete! Check JSON file and MongoDB for optimization data.")
+        print("✅ Analysis Complete! Check 'gcp_optimization.json' for the full report.")
         print("=" * 80)
 
     except Exception as e:
-        print(f"\n❌ Critical Error: {e}")
-        print("Please check your credentials and project configuration.")
-
+        print(f"\n❌ A critical error occurred during the main execution: {e}")
     except KeyboardInterrupt:
-        print(f"\n⚠️  Analysis interrupted by user.")
-        print("Partial results may be available.")
+        print("\n⚠️ Analysis interrupted by user.")
