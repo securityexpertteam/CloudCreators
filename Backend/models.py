@@ -104,6 +104,10 @@ class StandardConfig(BaseModel):
     gen_untagged: Optional[bool] = None
     gen_orphaned: Optional[bool] = None
 
+    # Database
+    db_size: Optional[int] = None
+    dtu_percentage: Optional[int] = None 
+
 class SigninUser(BaseModel):
     email: str
     password: str
