@@ -54,31 +54,6 @@ class Resource(BaseModel):
     RootId: str
     Email: Optional[str] = None
 
-# class StandardConfig(BaseModel):
-#     email: str  # <-- Store user's email with every config!
-#     type: str
-
-#     # Fields for Compute Engine
-#     cpu_usage: Optional[int] = None
-#     memory_usage: Optional[int] = None
-#     network_usage: Optional[int] = None
-
-#     # Fields for Kubernetes
-#     node_cpu_percentage: Optional[int] = None
-#     node_memory_percentage: Optional[int] = None
-#     node_count: Optional[int] = None
-#     volume_percentage: Optional[int] = None
-
-#     # Fields for Cloud Storage
-#     storage_size: Optional[int] = None
-#     access_frequency: Optional[str] = None
-#     network_egress: Optional[int] = None
-#     lifecycle_enabled: Optional[bool] = None
-
-#     # Fields for General Configuration
-#     untagged: Optional[bool] = None
-#     orphaned: Optional[bool] = None
-
 class StandardConfig(BaseModel):
     email: str
     type: str
@@ -104,9 +79,15 @@ class StandardConfig(BaseModel):
     gen_untagged: Optional[bool] = None
     gen_orphaned: Optional[bool] = None
 
-    # Database
-    db_size: Optional[int] = None
-    dtu_percentage: Optional[int] = None 
+    # Database (updated)
+    sql_dtu_consumption: Optional[int] = None
+    mysql_cpu_percentage: Optional[int] = None
+    postgresql_cpu_percentage: Optional[int] = None
+    mariadb_cpu_percenatge: Optional[int] = None
+    cosmos_total_requestunits: Optional[int] = None
+    redis_cpu_percentage: Optional[int] = None
+    mongodb_totalrequestunits: Optional[int] = None
+    synapse_cpu_percentage: Optional[int] = None
 
 class SigninUser(BaseModel):
     email: str
@@ -116,4 +97,6 @@ class SignupUser(BaseModel):
     firstname: str
     lastname: str
     email: EmailStr
-    password: str   
+    password: str
+
+
