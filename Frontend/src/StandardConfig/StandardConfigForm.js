@@ -4,6 +4,14 @@ import './StandardConfigForm.css';
 
 const CONFIG_TYPES = [
   {
+    key: "general",
+    label: "General Configuration",
+    fields: [
+      { name: "gen_untagged", label: "Include Untagged Resources", type: "checkbox" },
+      { name: "gen_orphaned", label: "Include Orphaned Resources", type: "checkbox" },
+    ],
+  },
+  {
     key: "compute_engine",
     label: "Compute Engine",
     fields: [
@@ -33,11 +41,11 @@ const CONFIG_TYPES = [
     ],
   },
   {
-    key: "general",
-    label: "General Configuration",
+    key: "database",
+    label: "Database",
     fields: [
-      { name: "gen_untagged", label: "Include Untagged Resources", type: "checkbox" },
-      { name: "gen_orphaned", label: "Include Orphaned Resources", type: "checkbox" },
+      { name: "db_size", label: "Database Size", type: "number" },
+      { name: "dtu_percentage", label: "DTU (%)", type: "percentage" }
     ],
   },
 ];
@@ -242,7 +250,16 @@ function StandardConfigForm() {
                   <b>Select Configuration Type:</b>
                 </label>
                 <div style={{ height: 16 }} />
-                <div className="signin-type-buttons">
+                <div
+                  className="signin-type-buttons"
+                  style={{
+                    display: "flex",
+                    flexWrap: "wrap",
+                    gap: "10px",
+                    justifyContent: "flex-start",
+                    marginBottom: "10px"
+                  }}
+                >
                   {CONFIG_TYPES.map((type) => (
                     <button
                       key={type.key}
@@ -250,8 +267,8 @@ function StandardConfigForm() {
                       className={`signin-type-btn${selectedType === type.key ? " selected" : ""}`}
                       onClick={() => handleTypeChange(type.key)}
                       style={{
-                        marginRight: 10,
-                        marginBottom: 10,
+                        marginRight: 0,
+                        marginBottom: 0,
                         padding: "8px 18px",
                         borderRadius: 8,
                         border: selectedType === type.key ? "2px solid #4287f5" : "1.5px solid #bbb",
@@ -274,7 +291,6 @@ function StandardConfigForm() {
                 const typeObj = CONFIG_TYPES.find((t) => t.key === selectedType);
                 return (
                   <div key={selectedType} className="signin-config-section">
-                    <h3 className="signin-section-title">{typeObj.label}</h3>
                     <div className="signin-fields-grid">
                       {typeObj.fields.map((field) => {
                         const isSpecialCheckbox =
