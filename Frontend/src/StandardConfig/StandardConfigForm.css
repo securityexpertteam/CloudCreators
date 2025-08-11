@@ -401,14 +401,15 @@ tr:nth-child(even) {
   width: 100vw;
   background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
   display: flex;
-  align-items: center;
+  align-items: flex-start;    /* Move content to top */
   justify-content: center;
+  padding-top: 40px;          /* Add space from the very top */
 }
 
 .signin-center {
   width: 100vw;
   display: flex;
-  align-items: center;
+  align-items: flex-start;    /* Move content to top */
   justify-content: center;
 }
 
@@ -416,7 +417,7 @@ tr:nth-child(even) {
   background: #fff !important;
   border-radius: 12px;
   border: 1.5px solid #e0e6ed;
-  width: 900px;
+  width: 935px;           /* Reduced from 1100px */
   max-width: 98vw;
   min-height: 420px;
   display: flex;
@@ -542,10 +543,11 @@ tr:nth-child(even) {
   color: #fff !important;
 }
 
+/* Clean final button styles */
 .signin-type-btn {
-  background: #2563eb !important;
-  color: #fff !important;
-  border: none;
+  background: #fff !important;
+  color: #232526 !important;
+  border: 1.5px solid #bbb !important;
   border-radius: 10px;
   padding: 10px 28px;
   font-size: 1.1rem;
@@ -553,17 +555,55 @@ tr:nth-child(even) {
   cursor: pointer;
   margin-right: 10px;
   margin-bottom: 10px;
-  transition: background 0.2s, box-shadow 0.2s, transform 0.1s;
-  box-shadow: 0 2px 8px rgba(36, 86, 231, 0.08);
+  box-shadow: 0 2px 8px rgba(36,86,231,0.08);
+  transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease;
+  transform: translateY(0);
 }
 
-.signin-type-btn.selected,
-.signin-type-btn:hover,
-.signin-type-btn:focus {
-  background: #1d4ed8 !important;
+/* Hover / focus (unselected): lift only, keep white background */
+.signin-type-btn:not(.selected):hover,
+.signin-type-btn:not(.selected):focus {
+  border-color: #4287f5 !important;
+  transform: translateY(-3px);
+  box-shadow: 0 6px 16px rgba(66,135,245,0.25);
+  outline: none;
+  background: #fff !important;
+  color: #232526 !important;
+}
+
+/* Selected (clicked) state: gradient + lift */
+.signin-type-btn.selected {
+  background: linear-gradient(90deg,#4287f5 0%,#a742f5 100%) !important;
   color: #fff !important;
-  box-shadow: 0 6px 24px rgba(36, 86, 231, 0.15);
-  filter: brightness(1.05) saturate(1.08);
+  border: 2px solid #4287f5 !important;
+  box-shadow: 0 10px 24px -4px rgba(66,135,245,0.45), 0 4px 10px rgba(0,0,0,0.12);
+  transform: translateY(-4px);
+}
+
+/* Keep SAME blue while hovering selected (no color change) */
+.signin-type-btn.selected:hover,
+.signin-type-btn.selected:focus {
+  background: linear-gradient(90deg,#4287f5 0%,#a742f5 100%) !important;
+  color: #fff !important;
+  transform: translateY(-4px);
+  box-shadow: 0 10px 24px -4px rgba(66,135,245,0.45), 0 4px 10px rgba(0,0,0,0.12);
+}
+
+/* Press feedback */
+.signin-type-btn:active { transform: translateY(-1px); }
+.signin-type-btn.selected:active { transform: translateY(-2px); }
+
+/* Optional: focus ring (accessible) */
+.signin-type-btn:focus-visible {
+  outline: 3px solid #bcd8ff;
+  outline-offset: 2px;
+}
+
+.signin-type-buttons {
+  display: flex;
+  flex-wrap: nowrap; /* Prevent wrapping */
+  gap: 10px;
+  justify-content: flex-start;
 }
 
 /* Glassy fade-in animation */
@@ -630,5 +670,65 @@ tr:nth-child(even) {
   .signin-field-label {
     min-width: 100px;
   }
+}
+
+/* Hover / focus (unselected): lift slightly, keep white background */
+.signin-type-btn:not(.selected):hover,
+.signin-type-btn:not(.selected):focus {
+  border-color: #4287f5 !important;
+  transform: translateY(-3px);
+  box-shadow: 0 6px 16px rgba(66,135,245,0.25);
+  outline: none;
+}
+
+/* Selected (clicked) state: gradient + stronger lift */
+.signin-type-btn.selected {
+  background: linear-gradient(90deg, #4287f5 0%, #a742f5 100%) !important;
+  color: #fff !important;
+  border: 2px solid #4287f5 !important;
+  box-shadow: 0 10px 24px -4px rgba(66,135,245,0.45), 0 4px 10px rgba(0,0,0,0.12);
+  transform: translateY(-4px);
+}
+
+/* Focus ring for accessibility */
+.signin-type-btn:focus-visible {
+  outline: 3px solid #bcd8ff;
+  outline-offset: 2px;
+}
+
+/* Press feedback */
+.signin-type-btn:active {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(66,135,245,0.25);
+}
+
+.signin-type-btn.selected:active {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 18px rgba(66,135,245,0.35);
+}
+
+/* Selected (clicked) state: use SAME solid blue as save button (no gradient) */
+.signin-type-btn.selected {
+  background: #2563eb !important;            /* same as .signin-save-btn */
+  color: #fff !important;
+  border: 2px solid #2563eb !important;
+  box-shadow: 0 10px 24px -4px rgba(37,99,235,0.45), 0 4px 10px rgba(0,0,0,0.12);
+  transform: translateY(-4px);
+}
+
+/* Keep EXACT same blue on hover/focus (no change) */
+.signin-type-btn.selected:hover,
+.signin-type-btn.selected:focus {
+  background: #2563eb !important;
+  color: #fff !important;
+  box-shadow: 0 10px 24px -4px rgba(37,99,235,0.45), 0 4px 10px rgba(0,0,0,0.12);
+  transform: translateY(-4px);
+}
+
+/* Active press feedback (slight push + subtle darken) */
+.signin-type-btn.selected:active {
+  background: #1d4ed8 !important;  /* matches save button hover tone */
+  transform: translateY(-2px);
+  box-shadow: 0 6px 18px rgba(29,78,216,0.40), 0 3px 8px rgba(0,0,0,0.12);
 }
 
