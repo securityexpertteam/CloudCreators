@@ -167,7 +167,7 @@ async def environment_onboarding(
         saved = False
         for file in files or []:
             if file.filename.endswith(".json"):
-                dest_path = os.path.join(cred_folder, f"{user['managementUnitId']}.json")
+                dest_path = os.path.join(cred_folder, f"{user['managementUnitId']}_{user['secretname']}.json")
                 print(f"Saving file to: {dest_path}")
                 with open(dest_path, "wb") as f:
                     shutil.copyfileobj(file.file, f)
