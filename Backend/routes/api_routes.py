@@ -13,6 +13,8 @@ from dateutil import parser
 from fastapi.responses import JSONResponse
 from typing import List
 import shutil
+import json
+from fastapi import HTTPException
 
 router = APIRouter()
 
@@ -108,7 +110,7 @@ def get_latest_config(
     config["_id"] = str(config["_id"])
     return config
 
-# ====User Onboarding routes============
+# ====Environment Onboarding routes============
 
 @router.post("/environment_onboarding")
 async def environment_onboarding(
@@ -117,11 +119,7 @@ async def environment_onboarding(
     users: str = Form(...),
     files: List[UploadFile] = File(None)
 ):
-    import json
-    import os
-    import shutil
-    from cryptography.fernet import Fernet
-    from fastapi import HTTPException
+    
 
     users = json.loads(users)
 
@@ -130,7 +128,7 @@ async def environment_onboarding(
     cred_folder = os.path.abspath(cred_folder)
     os.makedirs(cred_folder, exist_ok=True)
 
-    inserted_users = []
+    inserted_environments = []
     file_map = {f.filename: f for f in files or []}
     
     for idx, user in enumerate(users):
@@ -162,7 +160,7 @@ async def environment_onboarding(
     # Insert into MongoDB
     result = usersEnvironmentOnboarding_collection.insert_one(user_dict)
     user_dict["_id"] = str(result.inserted_id)
-    inserted_users.append(user_dict)
+    inserted_environments.append(user_dict)
 
     # Save GCP JSON file if applicable
     if user["cloudName"] == "GCP":
@@ -179,21 +177,20 @@ async def environment_onboarding(
             print("No GCP JSON file found to save.")
 
 
-    if not inserted_users:
+    if not inserted_environments:
         raise HTTPException(status_code=400, detail="All entries are duplicates or failed")
 
-    for user in inserted_users:
+    for user in inserted_environments:
         user.pop("_id", None)
 
     return {
-        "message": f"{len(inserted_users)} users added to Environment successfully",
-        "data": inserted_users
+        "message": f"{len(inserted_environments)} Environment added successfully",
+        "data": inserted_environments
     }
 
 
 
-
-    
+# Environment Fetch by Login Email    
 @router.get("/environments/{email}")
 def get_environments(email: str):
     entries = list(usersEnvironmentOnboarding_collection.find({"email": email}))
