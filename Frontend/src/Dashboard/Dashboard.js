@@ -289,6 +289,9 @@ function Dashboard() {
   const uniqueCIOs = new Set(resources.map(r => r.CIO)).size;
   const uniqueCloudProviders = new Set(resources.map(r => r.CloudProvider)).size;
   const uniqueEntities = new Set(resources.map(r => r.Entity)).size;
+  const totalCostSavings = resources
+  .filter((r) => r.Finding && r.Finding.includes('Orphan'))
+  .reduce((sum, r) => sum + (parseFloat(r.TotalCost) || 0), 0);
 
   // Color palettes
   const palette = [
@@ -437,7 +440,7 @@ function Dashboard() {
         }}>
           <span style={{position: 'absolute', top: 12, right: 12, fontSize: 20, color: '#42f5b3'}}>☁️</span>
           <div style={{fontSize: 14, color: '#bbb'}}>Total Cloud Providers</div>
-          <div style={{fontSize: 28, fontWeight: 700, color: '#42f5b3', marginTop: 4}}>{uniqueCloudProviders}</div>
+          <div style={{fontSize: 28, fontWeight: 700, color: '#d1d413ff', marginTop: 4}}>{uniqueCloudProviders}</div>
         </div>
         {/* Unique CIOs Card */}
         <div className="card" style={{
@@ -482,7 +485,22 @@ function Dashboard() {
         }}>
           <span style={{position: 'absolute', top: 12, right: 12, fontSize: 20, color: '#81c784'}}>🗂️</span>
           <div style={{fontSize: 14, color: '#bbb'}}>Total Resources</div>
-          <div style={{fontSize: 28, fontWeight: 700, color: '#81c784', marginTop: 4}}>{totalResources}</div>
+          <div style={{fontSize: 28, fontWeight: 700, color: '#502ee7ff', marginTop: 4}}>{totalResources}</div>
+        </div>
+        {/* Total Cost Savings Card */}
+        <div className="card" style={{
+          background: 'rgba(30,30,35,0.7)',
+          borderRadius: 18,
+          padding: 24,
+          minWidth: 180,
+          boxShadow: '0 4px 24px rgba(0,0,0,0.35)',
+          display: 'flex', flexDirection: 'column', alignItems: 'center', position: 'relative',
+          border: '1.5px solid #333',
+          backdropFilter: 'blur(8px)'
+        }}>
+          <span style={{position: 'absolute', top: 12, right: 12, fontSize: 20, color: '#427bf5ff'}}>💸</span>
+          <div style={{fontSize: 14, color: '#bbb'}}>Potential Savings (Orphan Resources)</div>
+          <div style={{fontSize: 28, fontWeight: 700, color: '#17dd48ff', marginTop: 4}}>${totalCostSavings.toLocaleString(undefined, {maximumFractionDigits: 2})}</div>
         </div>
       </div>
 
