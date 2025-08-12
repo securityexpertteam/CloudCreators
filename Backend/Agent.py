@@ -120,7 +120,7 @@ def fetch_credentials(mongo_uri, db_name, collection_name, email_to_find, cloud_
             
            
             project_id = managementUnit_Id
-            AUTH_JSON_PATH = f"Creds//{project_id}.json"
+            AUTH_JSON_PATH = f"Creds//{project_id}_{secret_name}.json"
 
             #  This key must have secretAccessor role
             if not os.access(AUTH_JSON_PATH, os.R_OK):
@@ -136,10 +136,11 @@ def fetch_credentials(mongo_uri, db_name, collection_name, email_to_find, cloud_
             #secret_id = "mygcpvaultreader1-json"
             version_id = "latest"
             #my-gcpsrv1
-            secret_name = f"projects/{project_id}/secrets/{secret_name}/versions/latest"
+            
+            secret_fullname = f"projects/{project_id}/secrets/{secret_name}/versions/latest"
  
             # Step 4: Access the secret payload
-            response = client.access_secret_version(request={"name": secret_name})
+            response = client.access_secret_version(request={"name": secret_fullname})
             secret_payload = response.payload.data.decode("UTF-8")
 
             # Step 5: Parse and use the service account JSON key
