@@ -132,45 +132,51 @@ async def environment_onboarding(
 
     inserted_users = []
     file_map = {f.filename: f for f in files or []}
-
+    
     for idx, user in enumerate(users):
         existing = usersEnvironmentOnboarding_collection.find_one({
-            "cloudName": user["cloudName"],
-            "environment": user["environment"],
-            "rootId": user["rootId"],
-            "managementUnitId": user["managementUnitId"]
-        })
+        "cloudName": user["cloudName"],
+        "environment": user["environment"],
+        "rootId": user["rootId"],
+        "managementUnitId": user["managementUnitId"]
+    })
         if existing:
             continue
 
-        user_dict = dict(user)
-        user_dict["email"] = email
+    user_dict = dict(user)
+    user_dict["email"] = email
 
-        # Encrypt credentials
+    # ✅ If GCP, remove vault-related fields before saving
+    if user_dict["cloudName"] == "GCP":
+        user_dict.pop("vaultname", None)
+        user_dict.pop("srvaccntName", None)
+        user_dict.pop("srvacctPass", None)
+    else:
+        # Encrypt credentials only if not GCP
         fernet = Fernet(os.environ["fernet_key"])
         if user.get("srvacctPass"):
             user_dict["srvacctPass"] = fernet.encrypt(user["srvacctPass"].encode()).decode()
         if user.get("srvaccntName"):
             user_dict["srvaccntName"] = fernet.encrypt(user["srvaccntName"].encode()).decode()
 
-        result = usersEnvironmentOnboarding_collection.insert_one(user_dict)
-        user_dict["_id"] = str(result.inserted_id)
-        inserted_users.append(user_dict)
+    # Insert into MongoDB
+    result = usersEnvironmentOnboarding_collection.insert_one(user_dict)
+    user_dict["_id"] = str(result.inserted_id)
+    inserted_users.append(user_dict)
 
-        # Save GCP file
-        # Save GCP file
-        if user["cloudName"] == "GCP":
-            saved = False
-            for file in files or []:
-                if file.filename.endswith(".json"):
-                    dest_path = os.path.join(cred_folder, f"{user['managementUnitId']}.json")
-                    print(f"Saving file to: {dest_path}")
-                    with open(dest_path, "wb") as f:
-                        shutil.copyfileobj(file.file, f)
-                    saved = True
-                    break
-            if not saved:
-                print("No GCP JSON file found to save.")
+    # Save GCP JSON file if applicable
+    if user["cloudName"] == "GCP":
+        saved = False
+        for file in files or []:
+            if file.filename.endswith(".json"):
+                dest_path = os.path.join(cred_folder, f"{user['managementUnitId']}.json")
+                print(f"Saving file to: {dest_path}")
+                with open(dest_path, "wb") as f:
+                    shutil.copyfileobj(file.file, f)
+                saved = True
+                break
+        if not saved:
+            print("No GCP JSON file found to save.")
 
 
     if not inserted_users:
@@ -183,6 +189,7 @@ async def environment_onboarding(
         "message": f"{len(inserted_users)} users added to Environment successfully",
         "data": inserted_users
     }
+
 
 
 
