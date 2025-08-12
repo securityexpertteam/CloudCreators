@@ -5,7 +5,7 @@ from datetime import datetime, timedelta, UTC
 import ipaddress
 import json
 import os
-
+import base64
 # Import required Google Cloud libraries
 from google.cloud import asset_v1, monitoring_v3
 from google.cloud import storage as gcs_storage
@@ -18,7 +18,7 @@ sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
 
 SKU_CACHE = {}
 BILLING_SERVICE_NAME = ""
-
+CACHED_SKU_LISTS = {}
 
 # ================================================================================
 # ARGUMENT PARSING
@@ -47,7 +47,8 @@ print("=" * 80)
 # AUTHENTICATION
 # ================================================================================
 try:
-    pk_string = args.private_key.replace('\\n', '\n')
+    pk_string = base64.b64decode(args.private_key).decode('utf-8')
+    #pk_string = args.private_key.replace('\\n', '\n')
     credentials_info = {
         "type": "service_account",
         "project_id": PROJECT_ID,
@@ -138,6 +139,61 @@ def initialize_billing_info():
         print(f"❌ Error initializing billing: {e}")
         exit(1)
 
+def cache_all_skus(service_id, credentials):
+    """
+    Fetches all SKUs for a given service and caches them in memory.
+    This is run once per service to avoid repeated API calls.
+    """
+    if service_id in CACHED_SKU_LISTS:
+        return  # Already cached
+
+    print(f"🔍 Caching all SKUs for service '{service_id}' for faster price lookups...")
+    try:
+        all_skus = []
+        page_token = None
+        while True:
+            request = billing_client.services().skus().list(parent=f"services/{service_id}", pageToken=page_token)
+            response = request.execute()
+            all_skus.extend(response.get('skus', []))
+            page_token = response.get('nextPageToken')
+            if not page_token:
+                break
+
+        CACHED_SKU_LISTS[service_id] = all_skus
+        print(f"  ✅ Cached {len(all_skus)} SKUs for service '{service_id}'.")
+    except Exception as e:
+        print(f"    ⚠️ Could not cache SKUs for service '{service_id}': {e}")
+        CACHED_SKU_LISTS[service_id] = []  # Cache empty list on failure
+
+def find_sku_in_list(service_id, sku_description_filter, region="global"):
+    """
+    Finds a specific SKU from a pre-fetched list of SKUs. This is extremely fast.
+    Returns: (float, str): A tuple of (price_per_unit, usage_unit).
+    """
+    cache_key = (service_id, sku_description_filter, region)
+    if cache_key in SKU_CACHE:
+        return SKU_CACHE[cache_key]
+
+    sku_list = CACHED_SKU_LISTS.get(service_id, [])
+    if not sku_list:
+        return 0.0, "unknown"
+
+    for sku in sku_list:
+        if sku_description_filter.lower() in sku.get('description', '').lower() and \
+                (region in sku.get('serviceRegions', []) or region == "global"):
+            pricing_info = sku.get('pricingInfo', [{}])[0]
+            pricing_expression = pricing_info.get('pricingExpression', {})
+            price_nanos = pricing_expression.get('tieredRates', [{}])[0].get('unitPrice', {}).get('nanos', 0)
+            price_usd = price_nanos / 1_000_000_000
+            usage_unit = pricing_expression.get('usageUnitDescription', 'per unit')
+
+            SKU_CACHE[cache_key] = (price_usd, usage_unit)
+            return price_usd, usage_unit
+
+    SKU_CACHE[cache_key] = (0.0, "unknown")
+    return 0.0, "unknown"
+
+
 def get_sku_price(service_name, sku_description_filter, region="global"):
     """
     Fetches the price for a given SKU description and caches it.
@@ -191,44 +247,175 @@ def get_sku_price(service_name, sku_description_filter, region="global"):
     return 0.0, "unknown"
 
 
+def analyze_k8s_overprovisioning(project_id, credentials):
+    """
+    Analyzes Kubernetes container metrics to find over-provisioned workloads
+    where requests are more than 2x the actual usage.
+
+    NOTE: Requires GKE Workload Metrics to be enabled on the clusters.
+    """
+    print(f"\n⚙️  Analyzing Kubernetes Workload Provisioning (2x Threshold)")
+    print("=" * 60)
+    print("📋 Identifying containers where CPU/Memory requests are >200% of actual usage.")
+    print("ℹ️  NOTE: This check requires GKE Workload Metrics to be enabled on your clusters.")
+
+    monitoring_client = monitoring_v3.MetricServiceClient(credentials=credentials)
+    flagged_workloads = {}  # Use a dict to merge CPU and Memory findings for the same container
+
+    # --- MQL Query for CPU Over-provisioning ---
+    # Fetches containers where the average requested cores are more than 2x the average usage rate.
+    mql_cpu = f"""
+    fetch k8s_container
+    | {{ metric 'kubernetes.io/container/cpu/request_cores'
+    ; metric 'kubernetes.io/container/cpu/core_usage_time' | align rate(5m)
+    }}
+    | group_by 1d, [resource.cluster_name, resource.location, resource.namespace_name, resource.pod_name, resource.container_name],
+        [val(0): mean(value.request_cores), val(1): mean(value.core_usage_time)]
+    | join
+    | filter val(0) > 0 && val(1) > 0 && val(0) > 2 * val(1)
+    """
+
+    # --- MQL Query for Memory Over-provisioning ---
+    # Fetches containers where the average requested bytes are more than 2x the average used bytes.
+    mql_mem = f"""
+    fetch k8s_container
+    | {{ metric 'kubernetes.io/container/memory/request_bytes'
+    ; metric 'kubernetes.io/container/memory/used_bytes'
+    }}
+    | group_by 1d, [resource.cluster_name, resource.location, resource.namespace_name, resource.pod_name, resource.container_name],
+        [val(0): mean(value.request_bytes), val(1): mean(value.used_bytes)]
+    | join
+    | filter val(0) > 0 && val(1) > 0 && val(0) > 2 * val(1)
+    """
+
+    queries = {
+        "CPU": mql_cpu,
+        "Memory": mql_mem
+    }
+
+    try:
+        for resource_type, mql_query in queries.items():
+            request = monitoring_v3.QueryTimeSeriesRequest(
+                name=f"projects/{project_id}",
+                query=mql_query,
+            )
+            results = monitoring_client.query_time_series(request)
+
+            for result in results:
+                labels = result.label_values
+                cluster = labels[0].string_value
+                location = labels[1].string_value
+                namespace = labels[2].string_value
+                pod = labels[3].string_value
+                container = labels[4].string_value
+
+                request_val = result.point_data[0].values[0].double_value
+                usage_val = result.point_data[0].values[1].double_value
+
+                workload_id = f"{cluster}/{namespace}/{pod}/{container}"
+                finding_text = ""
+
+                if resource_type == "CPU":
+                    finding_text = f"CPU Request ({request_val:.3f} cores) is >2x usage ({usage_val:.3f} cores)."
+                    print(f"  ⚠️  Over-provisioned CPU in Pod '{pod}' (Container: {container})")
+                elif resource_type == "Memory":
+                    # Convert bytes to MiB for readability
+                    request_mib = request_val / 1024 / 1024
+                    usage_mib = usage_val / 1024 / 1024
+                    finding_text = f"Memory Request ({request_mib:.2f} MiB) is >2x usage ({usage_mib:.2f} MiB)."
+                    print(f"  ⚠️  Over-provisioned Memory in Pod '{pod}' (Container: {container})")
+
+                # If this is the first time we see this container, create a new record
+                if workload_id not in flagged_workloads:
+                    metadata = extract_resource_metadata(
+                        labels={},  # Pod labels are not easily available in MQL
+                        resource_name=f"{pod}/{container}",
+                        resource_type='container',
+                        region=location,
+                        full_name=f"//container.googleapis.com/projects/{project_id}/locations/{location}/clusters/{cluster}/namespaces/{namespace}/pods/{pod}/containers/{container}",
+                        status="Over-provisioned",
+                        cost_analysis={'total_cost_usd': 0.0},
+                        utilization_data={},
+                        is_orphaned=False
+                    )
+                    flagged_workloads[workload_id] = {
+                        "name": f"{pod}/{container}",
+                        "cluster": cluster,
+                        "namespace": namespace,
+                        "findings": [finding_text],
+                        "resource_metadata": metadata
+                    }
+                else:
+                    # Otherwise, just add the new finding to the existing record
+                    flagged_workloads[workload_id]["findings"].append(finding_text)
+
+        # Consolidate findings into the final metadata record
+        for workload in flagged_workloads.values():
+            workload['resource_metadata']['Finding'] = "; ".join(workload['findings'])
+            workload['resource_metadata']['Recommendation'] = "Right-size resource requests in the deployment YAML."
+
+        if not flagged_workloads:
+            print("  ✅ All Kubernetes workload requests appear well-sized.")
+        else:
+            print(f"🔍 Found {len(flagged_workloads)} over-provisioned workloads.")
+
+    except Exception as e:
+        # Gracefully handle the case where workload metrics are not enabled
+        if "one of the following metrics is not available" in str(e) or "invalid argument" in str(e).lower():
+            print("  ❌ Could not perform check. GKE Workload Metrics may not be enabled for this project's clusters.")
+            print("     Please enable it to use this feature.")
+        else:
+            print(f"❌ An unexpected error occurred during workload analysis: {e}")
+
+    return list(flagged_workloads.values())
+
 def analyze_gke_container_images(project_id, credentials):
     """
     Analyzes container images in GKE pods to find those using standard, non-minimal base images.
+    This version includes recommendations for 'distroless' and other minimal bases.
     """
-    print(f"\n🖼️  Analyzing GKE Container Base Images")
+    print(f"\n🖼️  Analyzing GKE Container Base Images (Enhanced Sizing Logic)")
     print("=" * 60)
-    print("📋 Identifying containers that could use more efficient base images (e.g., alpine, slim)")
+    print("📋 Identifying images that could be smaller and more secure (recommending alpine, slim, distroless)")
 
     asset_client = asset_v1.AssetServiceClient(credentials=credentials)
     flagged_containers = []
     total_pods_analyzed = 0
 
-    # Map of standard base images to their recommended minimal alternatives
+    # Enhanced map of standard images to their recommended minimal/secure alternatives
     MINIMAL_IMAGE_MAP = {
-        'ubuntu': 'ubuntu:minimal',
-        'debian': 'debian:slim',
-        'python': 'python:slim or python:alpine',
-        'node': 'node:alpine',
-        'golang': 'golang:alpine',
+        # General Purpose
+        'ubuntu': 'ubuntu:minimal or gcr.io/distroless/base-debian11',
+        'debian': 'debian:slim or gcr.io/distroless/base-debian11',
+        'centos': 'Consider a smaller base like debian:slim or Alpine',
+        'amazonlinux': 'Consider a smaller base like debian:slim or Alpine',
+        # Application Runtimes
+        'python': 'python:slim or python:alpine. For non-native dependencies, use gcr.io/distroless/python3-debian11',
+        'node': 'node:alpine or gcr.io/distroless/nodejs18-debian11',
+        'golang': 'golang:alpine (for builder) and gcr.io/distroless/static-debian11 (for final image)',
+        'openjdk': 'openjdk:alpine or gcr.io/distroless/java17-debian11',
+        'ruby': 'ruby:alpine',
+        'php': 'php:alpine',
+        # Web Servers
         'nginx': 'nginx:alpine',
         'httpd': 'httpd:alpine',
-        'openjdk': 'openjdk:alpine',
+        # Build Tools (should not be in production images)
+        'maven': 'Use in a multi-stage build; final image should be minimal (e.g., openjdk:alpine)',
+        'gradle': 'Use in a multi-stage build; final image should be minimal (e.g., openjdk:alpine)',
+        # Databases (less common in K8s, but good to check)
         'mysql': 'mysql:8.0-slim',
         'redis': 'redis:alpine'
     }
 
     try:
-        # Use Cloud Asset Inventory to find all Pod resources in the project
         response = asset_client.search_all_resources(
-            request={
-                "scope": f"projects/{project_id}",
-                "asset_types": ["k8s.io/Pod"],
-                "page_size": 500
-            }
+            request={"scope": f"projects/{project_id}", "asset_types": ["k8s.io/Pod"], "page_size": 500}
         )
 
         for resource in response:
             total_pods_analyzed += 1
+            if not resource.additional_attributes:  # ADD THIS LINE TO FIX THE BUG
+                continue
             pod_data_str = resource.additional_attributes.get('resource')
             if not pod_data_str:
                 continue
@@ -237,8 +424,6 @@ def analyze_gke_container_images(project_id, credentials):
             pod_name = pod_data.get('metadata', {}).get('name', 'unknown-pod')
             namespace = pod_data.get('metadata', {}).get('namespace', 'default')
 
-            # Extract cluster name and location from the full resource name
-            # e.g., //container.googleapis.com/projects/p/locations/l/clusters/c/k8s/pods/ns/pod
             try:
                 parts = resource.name.split('/clusters/')
                 cluster_name = parts[1].split('/')[0]
@@ -247,36 +432,37 @@ def analyze_gke_container_images(project_id, credentials):
                 cluster_name = "unknown-cluster"
                 location = "unknown-location"
 
-            # Check all containers within the pod spec
             containers = pod_data.get('spec', {}).get('containers', [])
             for container in containers:
+                if not container:
+                    continue
                 image_used = container.get('image')
                 if not image_used:
                     continue
 
-                # Get the base name of the image (e.g., 'ubuntu' from 'ubuntu:20.04')
+
+
                 base_image = image_used.split(':')[0].split('/')[-1]
 
                 if base_image in MINIMAL_IMAGE_MAP:
                     recommended_image = MINIMAL_IMAGE_MAP[base_image]
                     container_name = container.get('name', 'unknown-container')
 
-                    print(
-                        f"  ⚠️  Found inefficient image in Pod '{pod_name}' (Cluster: {cluster_name}): '{image_used}'")
+                    print(f"  ⚠️  Found standard base image in Pod '{pod_name}' (Container: {container_name}): '{image_used}'")
 
-                    # Create a standard metadata record for the finding
                     metadata = extract_resource_metadata(
                         labels=pod_data.get('metadata', {}).get('labels', {}),
                         resource_name=f"{pod_name}/{container_name}",
-                        resource_type='container',  # Use a new type for this
+                        resource_type='container',
                         region=location,
                         full_name=f"{resource.name}/containers/{container_name}",
                         status="Running",
-                        cost_analysis={'total_cost_usd': 0.0},  # This is an efficiency gain, not a direct cost
-                        utilization_data={'finding': f'Inefficient base image: {image_used}'},
+                        cost_analysis={'total_cost_usd': 0.0},
+                        utilization_data={'finding': f'Standard base image used: {image_used}'},
                         is_orphaned=False
                     )
-                    metadata['Recommendation'] = f"Consider using a minimal base image like '{recommended_image}'"
+                    metadata['Finding'] = "Standard base image can be optimized for size and security"
+                    metadata['Recommendation'] = f"Replace '{image_used}' with a minimal alternative like '{recommended_image}'"
 
                     flagged_containers.append({
                         'name': f"{pod_name}/{container_name}",
@@ -291,10 +477,9 @@ def analyze_gke_container_images(project_id, credentials):
 
         print(f"\nTotal pods analyzed: {total_pods_analyzed}")
         if not flagged_containers:
-            print("  ✅ All container base images appear to be efficient or are not in the standard library.")
+            print("  ✅ All container base images appear to be optimized.")
         else:
-            print(f"🔍 Found {len(flagged_containers)} containers using inefficient base images.")
-
+            print(f"🔍 Found {len(flagged_containers)} containers that can be optimized for smaller image size.")
 
     except Exception as e:
         print(f"❌ Error analyzing GKE container images: {e}")
@@ -1038,7 +1223,7 @@ def list_subnets_with_cidr_and_ip_usage(project_id, thresholds, credentials):
                         insight_request = recommender_client.projects().locations().insightTypes().insights().list(
                             parent=f"projects/{project_id}/locations/global",
                             insightType="google.networkanalyzer.vpcnetwork.ipAddressInsight",
-                            filter=f"targetResources=(//compute.googleapis.com/projects/{project_id}/regions/{region}/subnetworks/{name})"
+                            filter=f'targetResources="//compute.googleapis.com/projects/{project_id}/regions/{region}/subnetworks/{name}"'
                         )
                         insight_response = insight_request.execute()
 
@@ -1509,7 +1694,8 @@ def categorize_gcp_cloud_run(project_id, credentials, thresholds):
                 view=monitoring_v3.ListTimeSeriesRequest.TimeSeriesView.HEADERS,
             )
 
-            results = monitoring_client.list_time_series(request=time_series_request)
+            results = monitoring_client.list_time_series(time_series_request)
+
             request_count = sum(1 for _ in results)
 
             if request_count == 0:
@@ -1648,6 +1834,88 @@ def categorize_gcp_instance_groups(project_id, credentials, thresholds):
         print(f"❌ Error analyzing instance groups: {e}")
 
     return flagged_groups
+
+
+def analyze_storage_tiering(project_id, credentials):
+    """
+    Analyzes Cloud Storage buckets to find those lacking a lifecycle policy
+    for transitioning data to colder storage tiers.
+    """
+    print(f"\n🗄️  Analyzing Storage Bucket Lifecycle Policies for Tiering")
+    print("=" * 60)
+    print("📋 Identifying buckets without automated data tiering rules.")
+
+    storage_client = gcs_storage.Client(credentials=credentials, project=project_id)
+    flagged_buckets = []
+
+    # Define standard age-based thresholds for transitioning data
+    TIERING_THRESHOLDS_DAYS = {
+        'NEARLINE': 30,
+        'COLDLINE': 90,
+        'ARCHIVE': 365
+    }
+
+    try:
+        buckets = storage_client.list_buckets()
+        for bucket in buckets:
+            # We must reload the bucket's metadata to get its lifecycle rules
+            bucket.reload()
+
+            # The core check: Does this bucket have any lifecycle rules defined?
+            if not list(bucket.lifecycle_rules):
+                print(f"  ⚠️  Bucket '{bucket.name}' has no lifecycle policy for storage tiering.")
+
+                # For the recommendation, we can generate a sample policy
+                recommended_policy = [
+                    {
+                        "action": {"type": "SetStorageClass", "storageClass": "NEARLINE"},
+                        "condition": {"age": TIERING_THRESHOLDS_DAYS['NEARLINE'], "isLive": True}
+                    },
+                    {
+                        "action": {"type": "SetStorageClass", "storageClass": "COLDLINE"},
+                        "condition": {"age": TIERING_THRESHOLDS_DAYS['COLDLINE'], "isLive": True}
+                    },
+                    {
+                        "action": {"type": "SetStorageClass", "storageClass": "ARCHIVE"},
+                        "condition": {"age": TIERING_THRESHOLDS_DAYS['ARCHIVE'], "isLive": True}
+                    }
+                ]
+
+                # Create a standard metadata record for this finding
+                metadata = extract_resource_metadata(
+                    labels=bucket.labels,
+                    resource_name=bucket.name,
+                    resource_type='bucket',
+                    region=bucket.location,
+                    full_name=f"//storage.googleapis.com/{bucket.name}",
+                    status="Available",
+                    cost_analysis={'total_cost_usd': 0.0},  # Savings are potential, not current
+                    utilization_data={'finding': 'Missing lifecycle policy'},
+                    is_orphaned=False
+                )
+                # Override the default finding and recommendation
+                metadata['Finding'] = "Storage tiering policy is missing"
+                metadata['Recommendation'] = "Implement a lifecycle policy to move aging data to colder storage."
+                # Add the generated policy directly to the record for easy application
+                metadata['RecommendedPolicy'] = recommended_policy
+
+                flagged_buckets.append({
+                    'name': bucket.name,
+                    'location': bucket.location,
+                    'full_name': f"//storage.googleapis.com/{bucket.name}",
+                    'labels': bucket.labels,
+                    'resource_metadata': metadata
+                })
+
+        if not flagged_buckets:
+            print("  ✅ All buckets appear to have lifecycle policies in place.")
+        else:
+            print(f"🔍 Found {len(flagged_buckets)} buckets missing a lifecycle policy.")
+
+    except Exception as e:
+        print(f"❌ Error analyzing storage tiering policies: {e}")
+
+    return flagged_buckets
 
 def analyze_gcp_resource_quotas(project_id, credentials, thresholds):
     """
@@ -2021,10 +2289,11 @@ def collect_optimization_candidates(project_id, credentials, thresholds):
                     # Get actual IP utilization from Network Analyzer Insight
                     allocation_ratio = 0.0
                     try:
+                        parent_path = f"projects/{project_id}/locations/global/insightTypes/google.networkanalyzer.vpcnetwork.ipAddressInsight"
+
                         insight_request = recommender_client.projects().locations().insightTypes().insights().list(
-                            parent=f"projects/{PROJECT_ID}/locations/global",
-                            insightType="google.networkanalyzer.vpcnetwork.ipAddressInsight",
-                            filter=f"targetResources=(//compute.googleapis.com/projects/{PROJECT_ID}/regions/{region}/subnetworks/{name})"
+                            parent=parent_path,
+                            filter=f"targetResources=(//compute.googleapis.com/projects/{project_id}/regions/{region}/subnetworks/{name})"
                         )
                         insight_response = insight_request.execute()
                         for insight in insight_response.get('insights', []):
@@ -2182,11 +2451,13 @@ def collect_optimization_candidates(project_id, credentials, thresholds):
         print("  • Collecting orphaned snapshots...")
         snapshots_found = categorize_gcp_snapshots(PROJECT_ID, credentials, thresholds)
         for snap in snapshots_found:
-            cost_data = get_detailed_resource_costs(
-                PROJECT_ID,
-                'snapshot',
-                {'size_gb': snap['size_gb'], 'snapshot_type': 'standard'}
-            )
+            cost_config = {
+                'size_gb': snap['size_gb'],
+                'region': 'global'  # Snapshots are global
+            }
+            monthly_cost = get_resource_cost('snapshot', cost_config)
+            cost_data = {'total_cost_usd': monthly_cost}
+
             metadata = extract_resource_metadata(
                 labels=snap['labels'],
                 resource_name=snap['name'],
@@ -2593,8 +2864,11 @@ def extract_resource_metadata(labels, resource_name, resource_type, region=None,
     if is_orphaned:
         finding += "; Orphaned"
 
+    finding_key = finding.replace(';', '').replace(' ', '_').lower()
+
     return {
-        "_id": full_name or f"//cloudresourcemanager.googleapis.com/projects/{PROJECT_ID}/resources/{resource_name}",
+        # Use the new variable to construct the unique ID
+        "_id": f"{full_name or f'//cloudresourcemanager.googleapis.com/projects/{PROJECT_ID}/resources/{resource_name}'}/{finding_key}",
         "CloudProvider": "GCP",
         "ManagementUnitId": PROJECT_ID,
         "ApplicationCode": get_label_value("applicationcode"),
@@ -2642,16 +2916,16 @@ if __name__ == "__main__":
 
         # Call the other analysis functions
         all_candidates["inactive_cloud_run"] = categorize_gcp_cloud_run(PROJECT_ID, gcp_credentials, thresholds)
-        # Use the NEW enhanced function for instance groups
         all_candidates["underutilized_instance_groups"] = categorize_gcp_instance_groups(PROJECT_ID, gcp_credentials,
                                                                                          thresholds)
         all_candidates["advanced_cloud_run"] = analyze_cloud_run_optimization_opportunities(PROJECT_ID, gcp_credentials)
-
-        # NEW: Call the quota analysis function
         all_candidates["high_usage_quotas"] = analyze_gcp_resource_quotas(PROJECT_ID, gcp_credentials, thresholds)
-
-        # NEW: Call the container image analysis function
         all_candidates["inefficient_base_images"] = analyze_gke_container_images(PROJECT_ID, gcp_credentials)
+
+        # NEW: Call the storage tiering analysis function
+        all_candidates["missing_tiering_policies"] = analyze_storage_tiering(PROJECT_ID, gcp_credentials)
+        all_candidates["overprovisioned_k8s_workloads"] = analyze_k8s_overprovisioning(PROJECT_ID, gcp_credentials)
+
 
         # Step 3: Generate the final JSON report.
         save_optimization_report(all_candidates)
