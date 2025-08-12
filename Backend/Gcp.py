@@ -305,7 +305,7 @@ def analyze_cloud_run_optimization_opportunities(project_id, credentials):
 
     return optimization_candidates
 
-def get_thresholds_from_mongodb(email, collection_name="thresholds"):
+def get_thresholds_from_mongodb(email, collection_name="standardConfigsDb"):
     """
     Fetch analysis thresholds from a MongoDB collection based on user email.
 
