@@ -751,4 +751,3 @@ def analyze_azure_resources():
 
 if __name__ == "__main__":
     analyze_azure_resources()
-
