@@ -10,10 +10,11 @@ import os
 from cryptography.fernet import Fernet
 from google.cloud import secretmanager
 from google.oauth2 import service_account
+import base64
 
 
 # === STEP 1: Conditionally write key to .env ===
-def append_key_to_env(env_file=".env", env_key="fernet_key"):
+def append_key_to_env(env_file=".env", env_key="FERNET_KEY"):
     load_dotenv(dotenv_path=env_file)
     existing_key = os.environ.get(env_key)
 
@@ -31,7 +32,7 @@ def append_key_to_env(env_file=".env", env_key="fernet_key"):
     return new_key.encode()
 
 # === STEP 2: Load key from env ===
-def load_key_from_env(env_key="fernet_key"):
+def load_key_from_env(env_key="FERNET_KEY"):
     load_dotenv()
     key = os.environ.get(env_key)
     if not key:
@@ -52,7 +53,7 @@ def decrypt_message(token: bytes, key: bytes) -> str:
 append_key_to_env()
 # Load the .env file
 load_dotenv()
-FERNET_SECRET_KEY = os.getenv("fernet_key")
+FERNET_SECRET_KEY = os.getenv("FERNET_KEY")
 fernet = Fernet(FERNET_SECRET_KEY)
 
 
@@ -121,7 +122,7 @@ def fetch_credentials(mongo_uri, db_name, collection_name, email_to_find, cloud_
             project_id = managementUnit_Id
             AUTH_JSON_PATH = f"Creds//{project_id}.json"
 
-            # 🔒 This key must have secretAccessor role
+            #  This key must have secretAccessor role
             if not os.access(AUTH_JSON_PATH, os.R_OK):
                 print("No GCP Creds file found")
 
@@ -207,9 +208,7 @@ try:
                             #print(f"Password: {password}")
                             
                             if cloud_name == 'Azure':
-
-                               
-                          
+                        
                                 print(f" 🔵 Running Azure script")
                                 
                                 # Send the Data
@@ -225,7 +224,7 @@ try:
                                         "--tenant_id", tenant_id,
                                     ]
                               
-                                result = subprocess.run(cmd, capture_output=True, text=True)
+                                result = subprocess.run(cmd, capture_output=True, text=True,encoding='utf-8')
                                 
                             elif cloud_name == 'GCP':
                                 print(f"   🟡 Running GCP script")
@@ -233,17 +232,20 @@ try:
                                 # Send the Data
                                 project_id, client_email,private_key = fetch_credentials(mongo_uri, db_name, env_collection_name, email_to_find, cloud_name,managementUnit_Id,  vault_name, secret_name)
                            
+                           
+
+                                encoded_key = base64.b64encode(private_key.encode('utf-8')).decode('ascii')
                                 cmd = [
                                         "python", "Gcp.py",
                                         "--client_email", client_email,
-                                        "--private_key", private_key,
+                                        "--private_key", encoded_key,
                                         "--project_id", project_id,
                                         "--user_email", email_to_find
                                     ]
-                                result = subprocess.run(cmd, capture_output=True, text=True)
+                                result = subprocess.run(cmd, capture_output=True, text=True, encoding='utf-8')
                                 print(result.stdout)
                                 print(result.stderr)
-                               
+                           
                             else:
                                 print(f"   ❓ Unknown CloudName: {cloud_name}")
                 else:
@@ -263,11 +265,10 @@ try:
             )
             print(f"✅ Updated {len(triggers)} trigger(s) to Completed state")
         # Wait 30 seconds
-        time.sleep(30)
+        time.sleep(1)
         
 except KeyboardInterrupt:
     print("\n⚠️ Stopped by user")
 #finally:
 
     #client.close()
-
