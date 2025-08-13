@@ -23,8 +23,8 @@ SERVICE_ID_CACHE = {}
 
 FALLBACK_SERVICE_IDS = {
     "Compute Engine API": "6F81-5844-456A",
-    "Cloud Storage": "95FF-2D51-2352", # Note the key change here
-    "Cloud Run": "9662-B5DA-4595"
+    "Cloud Storage": "95FF-2D51-2352", # This ID is causing the 404 error
+    "Cloud Run Admin API": "152E-C115-5142"
 }
 
 # ================================================================================
@@ -836,8 +836,8 @@ def get_resource_cost(resource_type, config):
             cpu_idle_filter = "CPU Allocation Idle"
             mem_idle_filter = "Memory Allocation Idle"
 
-            cpu_price, _ = find_sku_in_list("Cloud Run", cpu_idle_filter, config['region'])
-            mem_price, _ = find_sku_in_list("Cloud Run", mem_idle_filter, config['region'])
+            cpu_price, _ = find_sku_in_list("Cloud Run Admin API", cpu_idle_filter, config['region'])
+            mem_price, _ = find_sku_in_list("Cloud Run Admin API", mem_idle_filter, config['region'])
 
             # Simplified cost - actual calculation might be more complex
             cost_per_month = (config['cpu'] * cpu_price + config['memory_gb'] * mem_price) * 730
@@ -2199,9 +2199,17 @@ def extract_resource_metadata(labels, resource_name, resource_type, region=None,
 
     # Helper function to safely get label value
     # Modified: Ensure empty strings are also treated as "NA"
+    # Located inside the extract_resource_metadata function
     def get_label_value(key, default="NA"):
-        value = labels.get(key) if labels else None
-        return value if value is not None and value != "" else default
+        if not labels:
+            return default
+        # Search for the key in a case-insensitive way
+        for label_key, label_value in labels.items():
+            if label_key.lower() == key.lower():
+                # If the key matches, return its value, but if the value is empty, return the default
+                return label_value if label_value else default
+        # If no matching key was found after checking all of them, return the default
+        return default
 
     # Extract region from resource ID or use provided region/zone
     extracted_region = region or zone or "NA"
@@ -2285,25 +2293,25 @@ def extract_resource_metadata(labels, resource_name, resource_type, region=None,
     recommendation = "Review usage and consider optimization"
 
     if resource_type == 'vm':
-        finding = "VM underutilised"
+        finding = "VM Underutilised"
         recommendation = "Scale Down"
     elif resource_type == 'bucket':
-        finding = "Bucket underutilised"
+        finding = "Bucket Underutilised"
         recommendation = "Try Merging"
     elif resource_type == 'subnet':
-        finding = "Subnet underutilised"
+        finding = "Subnet Underutilised"
         recommendation = "Scale Down"
     elif resource_type == 'disk':
-        finding = "Disk underutilised"
+        finding = "Disk Underutilised"
         recommendation = "Scale Down"
     elif resource_type == 'snapshot':
         finding = "Snapshot potentially unneeded"
         recommendation = "Delete"
     elif resource_type == 'cluster':  # NEW: GKE Cluster finding
-        finding = "GKE Cluster underutilised"
+        finding = "GKE Cluster Underutilised"
         recommendation = "Scale Down / Delete"
     elif resource_type == 'persistent_volume':  # NEW: K8s PV finding
-        finding = "Persistent Volume underutilised"
+        finding = "Persistent Volume Underutilised"
         recommendation = "Delete"
 
     # Check for missing/empty tags and append "; Untagged" to the finding if any are missing
@@ -2327,17 +2335,15 @@ def extract_resource_metadata(labels, resource_name, resource_type, region=None,
 
     finding_key = finding.replace(';', '').replace(' ', '_').lower()
 
-    return {
-        # Use the new variable to construct the unique ID
+    metadata_record = {
         "_id": f"{full_name or f'//cloudresourcemanager.googleapis.com/projects/{PROJECT_ID}/resources/{resource_name}'}/{finding_key}",
         "CloudProvider": "GCP",
         "ManagementUnitId": PROJECT_ID,
-        "ApplicationCode": get_label_value("applicationcode"),
+        "ApplicationCode": "IPP",
         "CostCenter": get_label_value("costcenter"),
         "CIO": get_label_value("cio"),
         "Owner": get_label_value("owner"),
         "TicketId": get_label_value("ticketid"),
-        # Include these tags in the MongoDB record
         "Features": get_label_value("features"),
         "Lab": get_label_value("lab"),
         "Platform": get_label_value("platform"),
@@ -2355,15 +2361,18 @@ def extract_resource_metadata(labels, resource_name, resource_type, region=None,
         "Status": resource_status,
         "Entity": "lbg",
         "RootId": "NA",
-        "Email": USER_EMAIL
+        "Email": USER_EMAIL,
+        # ADD THIS LINE TO PRESERVE THE COST DATA
+        "cost_analysis": cost_analysis or {'total_cost_usd': 0.0}
     }
-
+    return metadata_record
 
 # ================================================================================
 # MAIN EXECUTION
 # ================================================================================
 
 if __name__ == "__main__":
+        # Call the refactored cache_all_skus directly with the service names.
     try:
         # --- Stage 1: Dynamic Setup and Configuration ---
         print("\n--- Step 1: Initializing Configuration ---")
@@ -2379,7 +2388,6 @@ if __name__ == "__main__":
         # --- Stage 2: Pre-cache all pricing data for performance ---
         print("\n--- Step 2: Pre-caching All Pricing Information ---")
 
-        # Call the refactored cache_all_skus directly with the service names.
         # This is much cleaner and removes the need for intermediate variables.
         cache_all_skus("Compute Engine API", gcp_credentials)
         cache_all_skus("Cloud Storage", gcp_credentials)
