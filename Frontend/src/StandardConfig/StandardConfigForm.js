@@ -45,7 +45,6 @@ const CONFIG_TYPES = [
     label: "Database",
     fields: [
       { name: "db_type", label: "DB Type", type: "dropdown", options: ["sql","mysql","postgresql","mariadb","cosmos","redis","mongodb","synapse"] },
-      { name: "db_size", label: "DB Size (%)", type: "percentage" },
     ],
   },
 ];
@@ -54,14 +53,12 @@ function StandardConfigForm() {
   const user = JSON.parse(localStorage.getItem("user") || "{}");
   const email = user.email || "";
 
-  // Store all panes' values
   const [allFormValues, setAllFormValues] = useState({});
   const [selectedType, setSelectedType] = useState("");
   const [loadedConfig, setLoadedConfig] = useState({});
   const [message, setMessage] = useState("");
   const [showConfig, setShowConfig] = useState(false);
 
-  // On mount, load config and initialize allFormValues
   useEffect(() => {
     setMessage("");
     const fetchConfig = async () => {
@@ -72,7 +69,6 @@ function StandardConfigForm() {
         const config = res.data || {};
         setLoadedConfig(config);
 
-        // Initialize allFormValues with loaded config or empty (checkboxes default to false)
         let initial = {};
         CONFIG_TYPES.forEach(type => {
           type.fields.forEach(field => {
@@ -83,9 +79,13 @@ function StandardConfigForm() {
             }
           });
         });
+        const dbTypes = CONFIG_TYPES.find(t => t.key === "database").fields[0].options;
+        dbTypes.forEach(db => {
+          const key = `${db}_db_size`;
+          initial[key] = config[key] !== undefined ? config[key] : "";
+        });
         setAllFormValues(initial);
 
-        // Auto-select the first pane with config, or default to first pane
         const firstPaneWithConfig = CONFIG_TYPES.find(type =>
           type.fields.some(field =>
             config[field.name] !== undefined &&
@@ -95,7 +95,6 @@ function StandardConfigForm() {
         );
         setSelectedType(firstPaneWithConfig ? firstPaneWithConfig.key : CONFIG_TYPES[0].key);
       } catch {
-        // On error, initialize allFormValues as empty (checkboxes default to false)
         let initial = {};
         CONFIG_TYPES.forEach(type => {
           type.fields.forEach(field => {
@@ -110,59 +109,65 @@ function StandardConfigForm() {
     if (email) fetchConfig();
   }, [email]);
 
-  // When switching panes, keep allFormValues, just change visible pane
   const handleTypeChange = (typeKey) => {
     setSelectedType(typeKey);
   };
 
-  // Update only the field in allFormValues for the current pane
   const handleInputChange = (fieldName, value, fieldType) => {
-    setAllFormValues((prev) => {
-      // db_type now ONLY switches the visible metric; do NOT clear previously entered metrics
-      if (fieldName === "db_type") {
-        return { ...prev, db_type: value };
-      }
-      return {
-        ...prev,
-        [fieldName]: fieldType === "checkbox" ? !!value : value,
-      };
-    });
+    setAllFormValues((prev) => ({
+      ...prev,
+      [fieldName]: fieldType === "checkbox" ? !!value : value,
+    }));
   };
 
-  // Save all panes' data at once, set null for untouched fields
   const handleSubmit = async (e) => {
     e.preventDefault();
     setMessage("");
     let hasError = false;
 
-    // Validate ONLY fields that actually have a value (ignore blank / unvisited)
     for (const typeObj of CONFIG_TYPES) {
       for (const field of typeObj.fields) {
-        if (field.type === "percentage") {
-            const raw = allFormValues[field.name];
-            // Skip validation if user did not enter anything
-            if (raw === undefined || raw === null || raw === "") continue;
-
-            const val = Number(raw);
-            if (isNaN(val) || val < 1 || val > 100) {
-              setMessage(`❗ ${field.label} in ${typeObj.label} must be between 1 and 100.`);
-              hasError = true;
-              break;
+        if (typeObj.key === "database" && field.name === "db_type") {
+          const dbType = allFormValues.db_type;
+          if (dbType) {
+            const dbSizeVal = allFormValues[`${dbType}_db_size`];
+            if (dbSizeVal !== undefined && dbSizeVal !== "") {
+              const val = Number(dbSizeVal);
+              if (isNaN(val) || val < 1 || val > 100) {
+                setMessage(`❗ DB Size (%) for ${dbType} must be between 1 and 100.`);
+                hasError = true;
+                break;
+              }
             }
+          }
+        } else if (field.type === "percentage") {
+          const raw = allFormValues[field.name];
+          if (raw === undefined || raw === null || raw === "") continue;
+          const val = Number(raw);
+          if (isNaN(val) || val < 1 || val > 100) {
+            setMessage(`❗ ${field.label} in ${typeObj.label} must be between 1 and 100.`);
+            hasError = true;
+            break;
+          }
         }
       }
       if (hasError) break;
     }
     if (hasError) return;
 
-    // Build payload WITHOUT db_type (UI only). Empty / undefined => null
     let payload = { email };
     CONFIG_TYPES.forEach(type => {
       type.fields.forEach(field => {
-        // Only store db_type and db_size for database
-        if (type.key === "database" && !["db_type", "db_size"].includes(field.name)) return;
-        const v = allFormValues[field.name];
-        payload[field.name] = (v === undefined || v === "") ? null : v;
+        if (type.key === "database" && field.name === "db_type") {
+          payload.db_type = allFormValues.db_type || null;
+          if (allFormValues.db_type) {
+            const dbSizeKey = `${allFormValues.db_type}_db_size`;
+            payload[dbSizeKey] = allFormValues[dbSizeKey] !== "" ? allFormValues[dbSizeKey] : null;
+          }
+        } else if (type.key !== "database") {
+          const v = allFormValues[field.name];
+          payload[field.name] = (v === undefined || v === "") ? null : v;
+        }
       });
     });
 
@@ -175,24 +180,27 @@ function StandardConfigForm() {
       const config = res.data || {};
       setLoadedConfig(config);
 
-      // Refresh form values (db_type preserved locally)
       let updated = {};
       CONFIG_TYPES.forEach(type => {
         type.fields.forEach(field => {
           if (field.name === "db_type") return;
-            updated[field.name] = field.type === "checkbox"
-              ? config[field.name] === true
-              : (config[field.name] !== undefined ? config[field.name] : "");
+          updated[field.name] = field.type === "checkbox"
+            ? config[field.name] === true
+            : (config[field.name] !== undefined ? config[field.name] : "");
         });
       });
       updated.db_type = allFormValues.db_type || "";
+      const dbTypes = CONFIG_TYPES.find(t => t.key === "database").fields[0].options;
+      dbTypes.forEach(db => {
+        const key = `${db}_db_size`;
+        updated[key] = config[key] !== undefined ? config[key] : "";
+      });
       setAllFormValues(updated);
     } catch {
       setMessage("❌ Failed to save configuration.");
     }
   };
 
-  // Show configuration table (database lists only db_type and db_size)
   const renderConfigTables = () => {
     if (!loadedConfig || Object.keys(loadedConfig).length === 0) {
       return <div style={{ marginTop: "16px" }}>No previous configuration found.</div>;
@@ -200,7 +208,6 @@ function StandardConfigForm() {
 
     return (
       <div style={{ marginTop: "32px" }}>
-        {/* Other (non-database) configs */}
         {CONFIG_TYPES.filter(t => t.key !== "database").map(type => (
           <div key={type.key} style={{
               width: "100%", marginBottom: "28px", background: "#fff",
@@ -238,7 +245,6 @@ function StandardConfigForm() {
           </div>
         ))}
 
-        {/* Database */}
         <div style={{
           width: "100%", marginBottom: "28px", background: "#fff",
           borderRadius: "8px", boxShadow: "0 2px 8px rgba(0,0,0,0.04)",
@@ -250,23 +256,40 @@ function StandardConfigForm() {
           <table style={{ width: "100%", borderCollapse: "collapse", marginBottom: "16px" }}>
             <thead>
               <tr>
-                <th style={{ textAlign: "left", padding: "6px", borderBottom: "1px solid #ccc" }}>Field</th>
-                <th style={{ textAlign: "left", padding: "6px", borderBottom: "1px solid #ccc" }}>Value</th>
+                <th style={{ textAlign: "left", padding: "6px", borderBottom: "1px solid #ccc" }}>DB Type</th>
+                <th style={{ textAlign: "left", padding: "6px", borderBottom: "1px solid #ccc" }}>DB Size (%)</th>
               </tr>
             </thead>
             <tbody>
-              <tr>
-                <td style={{ padding: "6px", borderBottom: "1px solid #eee" }}>DB Type</td>
-                <td style={{ padding: "6px", borderBottom: "1px solid #eee" }}>
-                  {loadedConfig.db_type || "null"}
-                </td>
-              </tr>
-              <tr>
-                <td style={{ padding: "6px", borderBottom: "1px solid #eee" }}>DB Size (%)</td>
-                <td style={{ padding: "6px", borderBottom: "1px solid #eee" }}>
-                  {loadedConfig.db_size || "null"}
-                </td>
-              </tr>
+              {CONFIG_TYPES.find(t => t.key === "database").fields[0].options
+                .filter(db => {
+                  const key = `${db}_db_size`;
+                  // Show only if db_size is filled (not empty, undefined, or null)
+                  return loadedConfig[key] !== undefined && loadedConfig[key] !== null && loadedConfig[key] !== "";
+                })
+                .map(db => {
+                  const key = `${db}_db_size`;
+                  return (
+                    <tr key={db}>
+                      <td style={{ padding: "6px", borderBottom: "1px solid #eee" }}>
+                        {db.charAt(0).toUpperCase() + db.slice(1)}
+                      </td>
+                      <td style={{ padding: "6px", borderBottom: "1px solid #eee" }}>
+                        {loadedConfig[key]}
+                      </td>
+                    </tr>
+                  );
+                })}
+              {/* If none are filled, show a placeholder row */}
+              {CONFIG_TYPES.find(t => t.key === "database").fields[0].options.every(db => {
+                const key = `${db}_db_size`;
+                return loadedConfig[key] === undefined || loadedConfig[key] === null || loadedConfig[key] === "";
+              }) && (
+                <tr>
+                  <td style={{ padding: "6px", borderBottom: "1px solid #eee" }}>-</td>
+                  <td style={{ padding: "6px", borderBottom: "1px solid #eee" }}>-</td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>
@@ -355,7 +378,7 @@ function StandardConfigForm() {
                         fontSize: "0.98rem",
                         minWidth: 0,
                         flex: "1 1 0",
-                        maxWidth: "25%" // 4 buttons in row, so 25% width
+                        maxWidth: "25%"
                       }}
                     >
                       {CONFIG_TYPES[4].label}
@@ -387,7 +410,7 @@ function StandardConfigForm() {
                       {(() => {
                         let visibleFields = typeObj.fields;
                         if (isDb) {
-                          const order = { db_type: 0, db_size: 1 };
+                          const order = { db_type: 0 };
                           visibleFields = visibleFields.sort((a, b) => (order[a.name] ?? 2) - (order[b.name] ?? 2));
                         }
                         return visibleFields.map((field) => {
@@ -408,6 +431,90 @@ function StandardConfigForm() {
                                 ? { gridColumn: "1 / span 1", gridRow: 1, marginRight: "12px" }
                                 : { gridColumn: "2 / span 1", gridRow: 1 })
                             : undefined;
+                          if (isDb && field.name === "db_type") {
+                            return (
+                              <React.Fragment key="db_type">
+                                <div
+                                  className="signin-field"
+                                  style={{ ...fieldContainerStyle }}
+                                >
+                                  <label
+                                    htmlFor="db_type"
+                                    className="signin-field-label"
+                                    style={{ marginBottom: 0, lineHeight: 1.1, fontSize: "0.98rem" }}
+                                  >
+                                    DB Type
+                                  </label>
+                                  <select
+                                    value={allFormValues.db_type || ""}
+                                    onChange={e => handleInputChange("db_type", e.target.value, "dropdown")}
+                                    className="signin-select"
+                                    style={inputSizeStyle}
+                                  >
+                                    <option value="">Select</option>
+                                    {field.options.map(opt => (
+                                      <option key={opt} value={opt}>
+                                        {opt}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </div>
+                                {allFormValues.db_type && (
+                                  <div
+                                    className="signin-field"
+                                    style={{ gridColumn: "2 / span 1", gridRow: 1 }}
+                                  >
+                                    <label
+                                      htmlFor="db_size"
+                                      className="signin-field-label"
+                                      style={{ marginBottom: 0, lineHeight: 1.1, fontSize: "0.98rem" }}
+                                    >
+                                      DB Size (%)
+                                    </label>
+                                    <input
+                                      type="text"
+                                      inputMode="numeric"
+                                      pattern="[0-9]*"
+                                      value={allFormValues[`${allFormValues.db_type}_db_size`] || ""}
+                                      placeholder={
+                                        loadedConfig[`${allFormValues.db_type}_db_size`] !== undefined &&
+                                        loadedConfig[`${allFormValues.db_type}_db_size`] !== ""
+                                          ? loadedConfig[`${allFormValues.db_type}_db_size`]
+                                          : ""
+                                      }
+                                      min={1}
+                                      max={100}
+                                      onChange={e => {
+                                        let val = e.target.value.replace(/[^0-9]/g, "");
+                                        if (val.length > 3) val = val.slice(0, 3);
+                                        if (val !== "" && Number(val) > 100) val = val.slice(0, val.length - 1);
+                                        setAllFormValues(prev => ({
+                                          ...prev,
+                                          [`${allFormValues.db_type}_db_size`]: val
+                                        }));
+                                      }}
+                                      onKeyDown={e => {
+                                        if (
+                                          ["e", "E", "+", "-", ".", ",", " "].includes(e.key) ||
+                                          (e.key.length === 1 && e.key.match(/[a-zA-Z]/))
+                                        ) {
+                                          e.preventDefault();
+                                        }
+                                        if (
+                                          e.target.value.length >= 3 &&
+                                          !["Backspace", "Delete", "ArrowLeft", "ArrowRight", "Tab"].includes(e.key)
+                                        ) {
+                                          e.preventDefault();
+                                        }
+                                      }}
+                                      className="signin-input"
+                                      style={inputSizeStyle}
+                                    />
+                                  </div>
+                                )}
+                              </React.Fragment>
+                            );
+                          }
                           return (
                             <div
                               className="signin-field"
@@ -419,7 +526,7 @@ function StandardConfigForm() {
                                   <input
                                     type="checkbox"
                                     checked={allFormValues[field.name] === true}
-                                    onChange={(e) => handleInputChange(field.name, e.target.checked, field.type)}
+                                    onChange={e => handleInputChange(field.name, e.target.checked, field.type)}
                                     id={field.name}
                                     className="signin-checkbox"
                                     style={{ marginRight: "8px" }}
@@ -450,14 +557,17 @@ function StandardConfigForm() {
                                       }
                                       min={1}
                                       max={100}
-                                      onChange={(e) => {
+                                      onChange={e => {
                                         let val = e.target.value.replace(/[^0-9]/g, "");
                                         if (val.length > 3) val = val.slice(0, 3);
                                         if (val !== "" && Number(val) > 100) val = val.slice(0, val.length - 1);
-                                        setAllFormValues((prev) => ({ ...prev, [field.name]: val }));
+                                        setAllFormValues(prev => ({ ...prev, [field.name]: val }));
                                       }}
-                                      onKeyDown={(e) => {
-                                        if (["e", "E", "+", "-", ".", ",", " "].includes(e.key) || (e.key.length === 1 && e.key.match(/[a-zA-Z]/))) {
+                                      onKeyDown={e => {
+                                        if (
+                                          ["e", "E", "+", "-", ".", ",", " "].includes(e.key) ||
+                                          (e.key.length === 1 && e.key.match(/[a-zA-Z]/))
+                                        ) {
                                           e.preventDefault();
                                         }
                                         if (
@@ -474,14 +584,14 @@ function StandardConfigForm() {
                                     <input
                                       type="checkbox"
                                       checked={allFormValues[field.name] === true}
-                                      onChange={(e) => handleInputChange(field.name, e.target.checked, field.type)}
+                                      onChange={e => handleInputChange(field.name, e.target.checked, field.type)}
                                       id={field.name}
                                       className="signin-checkbox"
                                     />
                                   ) : field.type === "dropdown" ? (
                                     <select
                                       value={allFormValues[field.name] !== undefined ? allFormValues[field.name] : ""}
-                                      onChange={(e) => handleInputChange(field.name, e.target.value, field.type)}
+                                      onChange={e => handleInputChange(field.name, e.target.value, field.type)}
                                       className="signin-select"
                                       style={inputSizeStyle}
                                     >
@@ -490,7 +600,7 @@ function StandardConfigForm() {
                                           ? `Previous: ${loadedConfig[field.name]}`
                                           : "Select"}
                                       </option>
-                                      {field.options.map((opt) => (
+                                      {field.options.map(opt => (
                                         <option key={opt} value={opt}>
                                           {opt}
                                         </option>
@@ -507,12 +617,15 @@ function StandardConfigForm() {
                                           ? loadedConfig[field.name]
                                           : ""
                                       }
-                                      onChange={(e) => {
+                                      onChange={e => {
                                         let val = e.target.value.replace(/[^0-9]/g, "");
-                                        setAllFormValues((prev) => ({ ...prev, [field.name]: val }));
+                                        setAllFormValues(prev => ({ ...prev, [field.name]: val }));
                                       }}
-                                      onKeyDown={(e) => {
-                                        if (["e", "E", "+", "-", ".", ",", " "].includes(e.key) || (e.key.length === 1 && e.key.match(/[a-zA-Z]/))) {
+                                      onKeyDown={e => {
+                                        if (
+                                          ["e", "E", "+", "-", ".", ",", " "].includes(e.key) ||
+                                          (e.key.length === 1 && e.key.match(/[a-zA-Z]/))
+                                        ) {
                                           e.preventDefault();
                                         }
                                       }}
@@ -543,7 +656,7 @@ function StandardConfigForm() {
                     fontSize: "1rem",
                     padding: "8px 18px"
                   }}
-                  onClick={() => setShowConfig((prev) => !prev)}
+                  onClick={() => setShowConfig(prev => !prev)}
                 >
                   {showConfig ? "Hide Previous Configuration" : "Show Previous Configuration"}
                 </button>
@@ -559,4 +672,3 @@ function StandardConfigForm() {
 }
 
 export default StandardConfigForm;
-
