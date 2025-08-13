@@ -12,6 +12,26 @@ from google.cloud import secretmanager
 from google.oauth2 import service_account
 import base64
 
+# === LOGGING & DASHBOARD SETUP ===
+import logging
+import shutil
+import sys
+AGENTLOG_DIR = os.path.join(os.path.dirname(__file__), 'AgentLog')
+if not os.path.exists(AGENTLOG_DIR):
+    os.makedirs(AGENTLOG_DIR)
+sys.path.append(AGENTLOG_DIR)
+from logging_setup import setup_logging, log_success, log_error, log_info
+# from trigger_dashboard import TriggerCompletionDashboard
+setup_logging()
+# dashboard = TriggerCompletionDashboard()
+
+# === LOGGING & DASHBOARD SETUP ===
+sys.path.append(os.path.join(os.path.dirname(__file__), 'AgentLog'))
+from logging_setup import setup_logging, log_success, log_error, log_info
+# from trigger_dashboard import TriggerCompletionDashboard
+setup_logging()
+# dashboard = TriggerCompletionDashboard()
+
 
 # === STEP 1: Conditionally write key to .env ===
 def append_key_to_env(env_file=".env", env_key="FERNET_KEY"):
@@ -59,6 +79,8 @@ fernet = Fernet(FERNET_SECRET_KEY)
 
 print("🚀 MongoDB Trigger Watcher")
 print("Database: myDB | Collection: triggers")
+log_info("Agent Started", "MongoDB Trigger Watcher initialized")
+log_info("Database", "myDB | Collection: triggers")
 
 # Connect to MongoDB
 mongo_uri = "mongodb://localhost:27017/"
@@ -158,6 +180,7 @@ def fetch_credentials(mongo_uri, db_name, collection_name, email_to_find, cloud_
 
 
 try:
+    Current_Email = None
     while True:
         # Get current timestamp and one minute ago (your exact logic)
         now = datetime.datetime.utcnow().replace(second=0, microsecond=0, tzinfo=datetime.timezone.utc)
@@ -177,82 +200,66 @@ try:
         
     
         # Print message if triggers found
+        Current_Email = None
         if triggers:
-            print(f"\n🎯 TRIGGER MATCHED! Found {len(triggers)} trigger(s) at {now.isoformat()}")
+            log_success("Trigger Detection", f"Found {len(triggers)} trigger(s) at {now.isoformat()}")
             for trigger in triggers:
-                print(f"   ID: {trigger.get('_id')}")
-                print(f"   Scheduled: {trigger.get('ScheduledTimeStamp')}")
-                Current_Email = ''
+                log_info("Trigger ID", f"{trigger.get('_id')}")
+                log_info("Scheduled", f"{trigger.get('ScheduledTimeStamp')}")
                 Current_Email = trigger.get('email')
-                
                 # Check users collection for CloudName
-                Environment_List = Enviroment_Collection.find({"email": Current_Email}).sort("_id")
-                # Filter out completed scans
-                
-                Environment_List = list(Environment_List)
-
+                Environment_List = list(Enviroment_Collection.find({"email": Current_Email}).sort("_id"))
                 if Environment_List:
                     for Environment in Environment_List:
-                            cloud_name = ''
-                            tenant_id = ''
-                            client_id =''
-                            client_secret= username= password =vault_name = secret_name = email_to_find = ''
-                            cloud_name = Environment.get('cloudName')
-                            tenant_id = Environment.get('rootId')
-                            managementUnit_Id = Environment.get('managementUnitId')
-                            client_id = Environment.get('srvaccntName')  # App registered with API permissions
-                            client_secret = Environment.get('srvacctPass')
-                            vault_name = Environment.get('vaultname')
-                            secret_name = Environment.get('secretname')
-                            email_to_find = Environment.get('email')
-                            #print(f"Username: {username}")
-                            #print(f"Password: {password}")
-                            
-                            if cloud_name == 'Azure':
-                        
-                                print(f" 🔵 Running Azure script")
-                                
-                                # Send the Data
-                                username, password = fetch_credentials(mongo_uri, db_name, env_collection_name, email_to_find, cloud_name,managementUnit_Id,  vault_name, secret_name)
-                           
-                              
+                        cloud_name = Environment.get('cloudName')
+                        tenant_id = Environment.get('rootId')
+                        managementUnit_Id = Environment.get('managementUnitId')
+                        client_id = Environment.get('srvaccntName')
+                        client_secret = Environment.get('srvacctPass')
+                        vault_name = Environment.get('vaultname')
+                        secret_name = Environment.get('secretname')
+                        email_to_find = Environment.get('email')
+                        if cloud_name == 'Azure':
+                            log_info("Azure Script", "🔵 Running Azure script")
+                            try:
+                                username, password = fetch_credentials(mongo_uri, db_name, env_collection_name, email_to_find, cloud_name, managementUnit_Id, vault_name, secret_name)
                                 cmd = [
-                                        "python", "Azure.py",
-                                        "--client_id", username,
-                                        "--client_secret", password,
-                                        "--subscription_id", managementUnit_Id,
-                                        "--email", email_to_find,
-                                        "--tenant_id", tenant_id,
-                                    ]
-                              
-                                result = subprocess.run(cmd, capture_output=True, text=True,encoding='utf-8')
-                                
-                            elif cloud_name == 'GCP':
-                                print(f"   🟡 Running GCP script")
-                                
-                                # Send the Data
-                                project_id, client_email,private_key = fetch_credentials(mongo_uri, db_name, env_collection_name, email_to_find, cloud_name,managementUnit_Id,  vault_name, secret_name)
-                           
-                           
-
+                                    "python", "Azure.py",
+                                    "--client_id", username,
+                                    "--client_secret", password,
+                                    "--subscription_id", managementUnit_Id,
+                                    "--email", email_to_find,
+                                    "--tenant_id", tenant_id,
+                                ]
+                                result = subprocess.run(cmd, capture_output=True, text=True, encoding='utf-8')
+                                log_success("Azure Script Execution", "Completed successfully")
+                            except Exception as e:
+                                log_error("Azure Script Execution", str(e))
+                        elif cloud_name == 'GCP':
+                            log_info("GCP Script", "🟡 Running GCP script")
+                            try:
+                                project_id, client_email, private_key = fetch_credentials(mongo_uri, db_name, env_collection_name, email_to_find, cloud_name, managementUnit_Id, vault_name, secret_name)
                                 encoded_key = base64.b64encode(private_key.encode('utf-8')).decode('ascii')
                                 cmd = [
-                                        "python", "Gcp.py",
-                                        "--client_email", client_email,
-                                        "--private_key", encoded_key,
-                                        "--project_id", project_id,
-                                        "--user_email", email_to_find
-                                    ]
+                                    "python", "Gcp.py",
+                                    "--client_email", client_email,
+                                    "--private_key", encoded_key,
+                                    "--project_id", project_id,
+                                    "--user_email", email_to_find
+                                ]
                                 result = subprocess.run(cmd, capture_output=True, text=True, encoding='utf-8')
-                                print(result.stdout)
-                                print(result.stderr)
-                           
-                            else:
-                                print(f"   ❓ Unknown CloudName: {cloud_name}")
+                                log_success("GCP Script Execution", "Completed successfully")
+                                log_info("GCP Script Output", result.stdout)
+                                if result.stderr:
+                                    log_error("GCP Script Error", result.stderr)
+                            except Exception as e:
+                                log_error("GCP Script Execution", str(e))
+                        else:
+                            log_error("Unknown CloudName", f"{cloud_name}")
                 else:
-                    print("  ⚠️ No Environment found in environmentOnboarding collection")
+                    log_error("Environment Lookup", "No Environment found in environmentOnboarding collection")
         else:
-            print(f"⏳ No triggers found at {now.isoformat()}")
+            log_info("Trigger Polling", f"No triggers found at {now.isoformat()}")
         
         ScanCompletedTime = datetime.datetime.utcnow().replace(second=0, microsecond=0, tzinfo=datetime.timezone.utc)
         
@@ -265,11 +272,17 @@ try:
                 
             )
             print(f"✅ Updated {len(triggers)} trigger(s) to Completed state")
+            log_success("Trigger Update", f"Updated {len(triggers)} trigger(s) to Completed state")
         # Wait 30 seconds
         time.sleep(1)
+        # Show dashboard after each trigger batch if Current_Email is set
+        # if Current_Email is not None:
+        #     dashboard.show_trigger_completion_dashboard(Current_Email, operations_summary=None)
         
 except KeyboardInterrupt:
     print("\n⚠️ Stopped by user")
+except KeyboardInterrupt:
+    log_info("Agent", "Stopped by user")
 #finally:
 
     #client.close()
