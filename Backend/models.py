@@ -80,8 +80,14 @@ class StandardConfig(BaseModel):
     gen_orphaned: Optional[bool] = None
 
     # Database
-    db_type: Optional[str] = None
-    db_size: Optional[int] = None  # percentage (1-100)
+    sql_db_size: Optional[int] = None  
+    mysql_db_size: Optional[int] = None 
+    postgres_db_size: Optional[int] = None  
+    maria_db_size: Optional[int] = None 
+    cosmos_db_size: Optional[int] = None
+    redis_db_size: Optional[int] = None
+    mongodb_db_size: Optional[int] = None
+    synapse_db_size: Optional[int] = None
 
 class SigninUser(BaseModel):
     email: str
