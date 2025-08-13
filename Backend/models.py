@@ -79,15 +79,9 @@ class StandardConfig(BaseModel):
     gen_untagged: Optional[bool] = None
     gen_orphaned: Optional[bool] = None
 
-    # Database (updated)
-    sql_dtu_consumption: Optional[int] = None
-    mysql_cpu_percentage: Optional[int] = None
-    postgresql_cpu_percentage: Optional[int] = None
-    mariadb_cpu_percenatge: Optional[int] = None
-    cosmos_total_requestunits: Optional[int] = None
-    redis_cpu_percentage: Optional[int] = None
-    mongodb_totalrequestunits: Optional[int] = None
-    synapse_cpu_percentage: Optional[int] = None
+    # Database
+    db_type: Optional[str] = None
+    db_size: Optional[int] = None  # percentage (1-100)
 
 class SigninUser(BaseModel):
     email: str
@@ -97,6 +91,4 @@ class SignupUser(BaseModel):
     firstname: str
     lastname: str
     email: EmailStr
-    password: str
-
-
+    password: str   
