@@ -45,29 +45,10 @@ const CONFIG_TYPES = [
     label: "Database",
     fields: [
       { name: "db_type", label: "DB Type", type: "dropdown", options: ["sql","mysql","postgresql","mariadb","cosmos","redis","mongodb","synapse"] },
-      // Dynamic per-db metrics (only one shown based on db_type)
-      { name: "sql_dtu_consumption", label: "Dtu Consumption (%)", type: "percentage", dbFor: "sql" },
-      { name: "mysql_cpu_percentage", label: "Cpu Usage (%)", type: "percentage", dbFor: "mysql" },
-      { name: "postgresql_cpu_percentage", label: "Cpu Usage (%)", type: "percentage", dbFor: "postgresql" },
-      { name: "mariadb_cpu_percenatge", label: "Cpu Usage (%)", type: "percentage", dbFor: "mariadb" },
-      { name: "cosmos_total_requestunits", label: "Total Request units", type: "number", dbFor: "cosmos" },
-      { name: "redis_cpu_percentage", label: "Cpu Usage (%)", type: "percentage", dbFor: "redis" },
-      { name: "mongodb_totalrequestunits", label: "Total Request Units", type: "number", dbFor: "mongodb" },
-      { name: "synapse_cpu_percentage", label: "Cpu Usage (%)", type: "percentage", dbFor: "synapse" },
+      { name: "db_size", label: "DB Size (%)", type: "percentage" },
     ],
   },
 ];
-
-const DB_FIELD_TO_TYPE = {
-  sql_dtu_consumption: "sql",
-  mysql_cpu_percentage: "mysql",
-  postgresql_cpu_percentage: "postgresql",
-  mariadb_cpu_percenatge: "mariadb",
-  cosmos_total_requestunits: "cosmos",
-  redis_cpu_percentage: "redis",
-  mongodb_totalrequestunits: "mongodb",
-  synapse_cpu_percentage: "synapse",
-};
 
 function StandardConfigForm() {
   const user = JSON.parse(localStorage.getItem("user") || "{}");
@@ -178,7 +159,8 @@ function StandardConfigForm() {
     let payload = { email };
     CONFIG_TYPES.forEach(type => {
       type.fields.forEach(field => {
-        if (field.name === "db_type") return;
+        // Only store db_type and db_size for database
+        if (type.key === "database" && !["db_type", "db_size"].includes(field.name)) return;
         const v = allFormValues[field.name];
         payload[field.name] = (v === undefined || v === "") ? null : v;
       });
@@ -210,26 +192,11 @@ function StandardConfigForm() {
     }
   };
 
-  // Show configuration table (database lists ALL metrics, filled or not)
+  // Show configuration table (database lists only db_type and db_size)
   const renderConfigTables = () => {
     if (!loadedConfig || Object.keys(loadedConfig).length === 0) {
       return <div style={{ marginTop: "16px" }}>No previous configuration found.</div>;
     }
-
-    // Build database rows (one per metric, even if null)
-    const dbRows = Object.entries(DB_FIELD_TO_TYPE)
-      .map(([fieldName, dbType]) => {
-        const fieldDef = CONFIG_TYPES
-          .find(t => t.key === "database")
-          .fields.find(f => f.name === fieldName);
-        return {
-          dbType,
-          fieldLabel: fieldDef ? fieldDef.label : fieldName,
-          value: loadedConfig[fieldName] !== undefined && loadedConfig[fieldName] !== null && loadedConfig[fieldName] !== ""
-            ? loadedConfig[fieldName]
-            : null
-        };
-      });
 
     return (
       <div style={{ marginTop: "32px" }}>
@@ -271,7 +238,7 @@ function StandardConfigForm() {
           </div>
         ))}
 
-        {/* Database table (always show all metrics) */}
+        {/* Database */}
         <div style={{
           width: "100%", marginBottom: "28px", background: "#fff",
           borderRadius: "8px", boxShadow: "0 2px 8px rgba(0,0,0,0.04)",
@@ -280,28 +247,26 @@ function StandardConfigForm() {
           <div style={{ fontWeight: 700, fontSize: "1.08em", marginBottom: "10px", color: "#232526" }}>
             Database
           </div>
-          <table style={{ width: "100%", borderCollapse: "collapse" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", marginBottom: "16px" }}>
             <thead>
               <tr>
-                <th style={{ textAlign: "left", padding: "6px", borderBottom: "1px solid #ccc" }}>DB Type</th>
                 <th style={{ textAlign: "left", padding: "6px", borderBottom: "1px solid #ccc" }}>Field</th>
                 <th style={{ textAlign: "left", padding: "6px", borderBottom: "1px solid #ccc" }}>Value</th>
               </tr>
             </thead>
             <tbody>
-              {dbRows.map((r, idx) => (
-                <tr key={idx}>
-                  <td style={{ padding: "6px", borderBottom: "1px solid #eee", textTransform: "lowercase" }}>
-                    {r.dbType}
-                  </td>
-                  <td style={{ padding: "6px", borderBottom: "1px solid #eee" }}>
-                    {r.fieldLabel}
-                  </td>
-                  <td style={{ padding: "6px", borderBottom: "1px solid #eee" }}>
-                    {r.value === null ? "null" : r.value}
-                  </td>
-                </tr>
-              ))}
+              <tr>
+                <td style={{ padding: "6px", borderBottom: "1px solid #eee" }}>DB Type</td>
+                <td style={{ padding: "6px", borderBottom: "1px solid #eee" }}>
+                  {loadedConfig.db_type || "null"}
+                </td>
+              </tr>
+              <tr>
+                <td style={{ padding: "6px", borderBottom: "1px solid #eee" }}>DB Size (%)</td>
+                <td style={{ padding: "6px", borderBottom: "1px solid #eee" }}>
+                  {loadedConfig.db_size || "null"}
+                </td>
+              </tr>
             </tbody>
           </table>
         </div>
@@ -312,80 +277,149 @@ function StandardConfigForm() {
   return (
     <div className="signin-bg">
       <div className="signin-center">
-        <div className="signin-card">
-          <div className="signin-card-content">
-            <h2 className="signin-title">Standard Configuration</h2>
+        <div className="signin-card" style={{ maxWidth: 820, minWidth: 320, width: "100%" }}>
+          <div className="signin-card-content" style={{ padding: "18px 18px 10px 18px" }}>
+            <h2 className="signin-title" style={{ fontSize: "1.25rem" }}>Standard Configuration</h2>
             <form onSubmit={handleSubmit}>
               <div className="signin-section">
                 <label>
                   <b>Select Configuration Type:</b>
                 </label>
-                <div style={{ height: 16 }} />
-                <div
-                  className="signin-type-buttons"
-                  style={{
-                    display: "flex",
-                    flexWrap: "wrap",
-                    gap: "10px",
-                    justifyContent: "flex-start",
-                    marginBottom: "10px"
-                  }}
-                >
-                  {CONFIG_TYPES.map((type) => (
+                <div style={{ height: 12 }} />
+                <div>
+                  <div
+                    className="signin-type-buttons"
+                    style={{
+                      display: "flex",
+                      flexWrap: "nowrap",
+                      gap: "8px",
+                      justifyContent: "flex-start",
+                      marginBottom: "8px"
+                    }}
+                  >
+                    {CONFIG_TYPES.slice(0, 4).map((type, idx) => (
+                      <button
+                        key={type.key}
+                        type="button"
+                        className={`signin-type-btn${selectedType === type.key ? " selected" : ""}`}
+                        onClick={() => handleTypeChange(type.key)}
+                        style={{
+                          marginRight: 0,
+                          marginBottom: 0,
+                          padding: "7px 10px",
+                          borderRadius: 8,
+                          border: selectedType === type.key ? "2px solid #4287f5" : "1.5px solid #bbb",
+                          background: selectedType === type.key
+                            ? "linear-gradient(90deg, #4287f5 0%, #a742f5 100%)"
+                            : "#fff",
+                          color: selectedType === type.key ? "#fff" : "#232526",
+                          fontWeight: 600,
+                          cursor: "pointer",
+                          transition: "all 0.2s",
+                          fontSize: "0.98rem",
+                          minWidth: 0,
+                          flex: 1
+                        }}
+                        id={type.key === "general" ? "general-btn" : undefined}
+                      >
+                        {type.label}
+                      </button>
+                    ))}
+                  </div>
+                  <div
+                    className="signin-type-buttons"
+                    style={{
+                      display: "flex",
+                      justifyContent: "flex-start",
+                      marginBottom: "8px"
+                    }}
+                  >
                     <button
-                      key={type.key}
+                      key={CONFIG_TYPES[4].key}
                       type="button"
-                      className={`signin-type-btn${selectedType === type.key ? " selected" : ""}`}
-                      onClick={() => handleTypeChange(type.key)}
+                      className={`signin-type-btn${selectedType === CONFIG_TYPES[4].key ? " selected" : ""}`}
+                      onClick={() => handleTypeChange(CONFIG_TYPES[4].key)}
                       style={{
                         marginRight: 0,
                         marginBottom: 0,
-                        padding: "8px 18px",
+                        padding: "7px 10px",
                         borderRadius: 8,
-                        border: selectedType === type.key ? "2px solid #4287f5" : "1.5px solid #bbb",
-                        background: selectedType === type.key
+                        border: selectedType === CONFIG_TYPES[4].key ? "2px solid #4287f5" : "1.5px solid #bbb",
+                        background: selectedType === CONFIG_TYPES[4].key
                           ? "linear-gradient(90deg, #4287f5 0%, #a742f5 100%)"
                           : "#fff",
-                        color: selectedType === type.key ? "#fff" : "#232526",
+                        color: selectedType === CONFIG_TYPES[4].key ? "#fff" : "#232526",
                         fontWeight: 600,
                         cursor: "pointer",
-                        transition: "all 0.2s"
+                        transition: "all 0.2s",
+                        fontSize: "0.98rem",
+                        minWidth: 0,
+                        flex: "1 1 0",
+                        maxWidth: "25%" // 4 buttons in row, so 25% width
                       }}
                     >
-                      {type.label}
+                      {CONFIG_TYPES[4].label}
                     </button>
-                  ))}
+                  </div>
                 </div>
               </div>
-              <hr />
+              <hr style={{ margin: "10px 0" }} />
               {selectedType && (() => {
                 const typeObj = CONFIG_TYPES.find((t) => t.key === selectedType);
+                const isDb = typeObj.key === "database";
                 return (
-                  <div key={selectedType} className="signin-config-section">
-                    <div className="signin-fields-grid">
-                      {typeObj.fields
-                        .filter(f => {
-                          if (typeObj.key !== "database") return true;
-                          if (f.name === "db_type") return true;
-                          if (f.dbFor) {
-                            return allFormValues.db_type === f.dbFor;
-                          }
-                          return false;
-                        })
-                        .map((field) => {
-                          const isSpecialCheckbox =
-                            ["stor_lifecycle_enabled", "gen_untagged", "gen_orphaned"].includes(field.name);
-
+                  <div key={selectedType} className={`signin-config-section${isDb ? " db-sec" : ""}`}>
+                    <div
+                      className="signin-fields-grid"
+                      style={
+                        isDb
+                          ? {
+                              gridTemplateColumns: "1fr 1fr",
+                              gap: "8px",
+                              alignItems: "end",
+                              width: "100%",
+                              maxWidth: "100%",
+                              margin: "0 auto",
+                            }
+                          : undefined
+                      }
+                    >
+                      {(() => {
+                        let visibleFields = typeObj.fields;
+                        if (isDb) {
+                          const order = { db_type: 0, db_size: 1 };
+                          visibleFields = visibleFields.sort((a, b) => (order[a.name] ?? 2) - (order[b.name] ?? 2));
+                        }
+                        return visibleFields.map((field) => {
+                          const isSpecialCheckbox = ["stor_lifecycle_enabled", "gen_untagged", "gen_orphaned"].includes(field.name);
+                          const inputSizeStyle = isDb
+                            ? {
+                                height: 36,
+                                boxSizing: "border-box",
+                                padding: "8px 10px",
+                                fontSize: "0.98rem",
+                                borderRadius: 8,
+                                width: "100%",
+                                marginTop: 0
+                              }
+                            : undefined;
+                          const fieldContainerStyle = isDb
+                            ? (field.name === "db_type"
+                                ? { gridColumn: "1 / span 1", gridRow: 1, marginRight: "12px" }
+                                : { gridColumn: "2 / span 1", gridRow: 1 })
+                            : undefined;
                           return (
-                            <div className="signin-field" key={field.name}>
+                            <div
+                              className="signin-field"
+                              key={field.name}
+                              style={fieldContainerStyle}
+                            >
                               {field.type === "checkbox" && isSpecialCheckbox ? (
                                 <>
                                   <input
                                     type="checkbox"
                                     checked={allFormValues[field.name] === true}
-                                    onChange={(e) =>
-                                      handleInputChange(field.name, e.target.checked, field.type)
-                                    }
+                                    onChange={(e) => handleInputChange(field.name, e.target.checked, field.type)}
                                     id={field.name}
                                     className="signin-checkbox"
                                     style={{ marginRight: "8px" }}
@@ -396,69 +430,60 @@ function StandardConfigForm() {
                                 </>
                               ) : (
                                 <>
-                                  <label htmlFor={field.name} className="signin-field-label">
+                                  <label
+                                    htmlFor={field.name}
+                                    className="signin-field-label"
+                                    style={isDb ? { marginBottom: 0, lineHeight: 1.1, fontSize: "0.98rem" } : undefined}
+                                  >
                                     {field.label}
                                   </label>
                                   {field.type === "percentage" ? (
-                                    <>
-                                      <input
-                                        type="text"
-                                        inputMode="numeric"
-                                        pattern="[0-9]*"
-                                        value={allFormValues[field.name] !== undefined ? allFormValues[field.name] : ""}
-                                        placeholder={
-                                          loadedConfig[field.name] !== undefined && loadedConfig[field.name] !== ""
-                                            ? loadedConfig[field.name]
-                                            : ""
+                                    <input
+                                      type="text"
+                                      inputMode="numeric"
+                                      pattern="[0-9]*"
+                                      value={allFormValues[field.name] !== undefined ? allFormValues[field.name] : ""}
+                                      placeholder={
+                                        loadedConfig[field.name] !== undefined && loadedConfig[field.name] !== ""
+                                          ? loadedConfig[field.name]
+                                          : ""
+                                      }
+                                      min={1}
+                                      max={100}
+                                      onChange={(e) => {
+                                        let val = e.target.value.replace(/[^0-9]/g, "");
+                                        if (val.length > 3) val = val.slice(0, 3);
+                                        if (val !== "" && Number(val) > 100) val = val.slice(0, val.length - 1);
+                                        setAllFormValues((prev) => ({ ...prev, [field.name]: val }));
+                                      }}
+                                      onKeyDown={(e) => {
+                                        if (["e", "E", "+", "-", ".", ",", " "].includes(e.key) || (e.key.length === 1 && e.key.match(/[a-zA-Z]/))) {
+                                          e.preventDefault();
                                         }
-                                        min={field.type === "percentage" ? 1 : undefined}
-                                        max={field.type === "percentage" ? 100 : undefined}
-                                        onChange={(e) => {
-                                          let val = e.target.value.replace(/[^0-9]/g, "");
-                                          if (field.type === "percentage") {
-                                            if (val.length > 3) val = val.slice(0, 3);
-                                            if (val !== "" && Number(val) > 100) val = val.slice(0, val.length - 1);
-                                          }
-                                          setAllFormValues((prev) => ({
-                                            ...prev,
-                                            [field.name]: val,
-                                          }));
-                                        }}
-                                        onKeyDown={(e) => {
-                                          if (
-                                            ["e", "E", "+", "-", ".", ",", " "].includes(e.key) ||
-                                            (e.key.length === 1 && e.key.match(/[a-zA-Z]/))
-                                          ) {
-                                            e.preventDefault();
-                                          }
-                                          if (
-                                            field.type === "percentage" &&
-                                            e.target.value.length >= 3 &&
-                                            !["Backspace", "Delete", "ArrowLeft", "ArrowRight", "Tab"].includes(e.key)
-                                          ) {
-                                            e.preventDefault();
-                                          }
-                                        }}
-                                        className="signin-input"
-                                      />
-                                    </>
+                                        if (
+                                          e.target.value.length >= 3 &&
+                                          !["Backspace", "Delete", "ArrowLeft", "ArrowRight", "Tab"].includes(e.key)
+                                        ) {
+                                          e.preventDefault();
+                                        }
+                                      }}
+                                      className="signin-input"
+                                      style={inputSizeStyle}
+                                    />
                                   ) : field.type === "checkbox" ? (
                                     <input
                                       type="checkbox"
                                       checked={allFormValues[field.name] === true}
-                                      onChange={(e) =>
-                                        handleInputChange(field.name, e.target.checked, field.type)
-                                      }
+                                      onChange={(e) => handleInputChange(field.name, e.target.checked, field.type)}
                                       id={field.name}
                                       className="signin-checkbox"
                                     />
                                   ) : field.type === "dropdown" ? (
                                     <select
                                       value={allFormValues[field.name] !== undefined ? allFormValues[field.name] : ""}
-                                      onChange={(e) =>
-                                        handleInputChange(field.name, e.target.value, field.type)
-                                      }
+                                      onChange={(e) => handleInputChange(field.name, e.target.value, field.type)}
                                       className="signin-select"
+                                      style={inputSizeStyle}
                                     >
                                       <option value="">
                                         {loadedConfig[field.name] !== undefined && loadedConfig[field.name] !== ""
@@ -482,48 +507,31 @@ function StandardConfigForm() {
                                           ? loadedConfig[field.name]
                                           : ""
                                       }
-                                      min={field.type === "percentage" ? 1 : undefined}
-                                      max={field.type === "percentage" ? 100 : undefined}
                                       onChange={(e) => {
                                         let val = e.target.value.replace(/[^0-9]/g, "");
-                                        if (field.type === "percentage") {
-                                          if (val.length > 3) val = val.slice(0, 3);
-                                          if (val !== "" && Number(val) > 100) val = val.slice(0, val.length - 1);
-                                        }
-                                        setAllFormValues((prev) => ({
-                                          ...prev,
-                                          [field.name]: val,
-                                        }));
+                                        setAllFormValues((prev) => ({ ...prev, [field.name]: val }));
                                       }}
                                       onKeyDown={(e) => {
-                                        if (
-                                          ["e", "E", "+", "-", ".", ",", " "].includes(e.key) ||
-                                          (e.key.length === 1 && e.key.match(/[a-zA-Z]/))
-                                        ) {
-                                          e.preventDefault();
-                                        }
-                                        if (
-                                          field.type === "percentage" &&
-                                          e.target.value.length >= 3 &&
-                                          !["Backspace", "Delete", "ArrowLeft", "ArrowRight", "Tab"].includes(e.key)
-                                        ) {
+                                        if (["e", "E", "+", "-", ".", ",", " "].includes(e.key) || (e.key.length === 1 && e.key.match(/[a-zA-Z]/))) {
                                           e.preventDefault();
                                         }
                                       }}
                                       className="signin-input"
+                                      style={inputSizeStyle}
                                     />
                                   )}
                                 </>
                               )}
                             </div>
                           );
-                        })}
+                        });
+                      })()}
                     </div>
                   </div>
                 );
               })()}
-              <div style={{ display: "flex", gap: "12px", marginTop: "18px" }}>
-                <button type="submit" className="signin-save-btn">
+              <div style={{ display: "flex", gap: "10px", marginTop: "14px" }}>
+                <button type="submit" className="signin-save-btn" style={{ fontSize: "1rem", padding: "8px 18px" }}>
                   Save Configuration
                 </button>
                 <button
@@ -531,7 +539,9 @@ function StandardConfigForm() {
                   className="signin-save-btn"
                   style={{
                     background: showConfig ? "#a742f5" : "#4287f5",
-                    color: "#fff"
+                    color: "#fff",
+                    fontSize: "1rem",
+                    padding: "8px 18px"
                   }}
                   onClick={() => setShowConfig((prev) => !prev)}
                 >
@@ -549,3 +559,4 @@ function StandardConfigForm() {
 }
 
 export default StandardConfigForm;
+
