@@ -56,8 +56,15 @@ function Dashboard() {
     setLoading(true);
     axios.get(`http://localhost:8000/api/resources?email=${user.email}`)
       .then((res) => {
-        // Sort resources by TotalCost descending for table
-        const sortedResources = [...res.data].sort((a, b) => (parseFloat(b.TotalCost) || 0) - (parseFloat(a.TotalCost) || 0));
+        const normalizedData = res.data.map((item) => {
+          const normalizedItem = {};
+          for (const key in item) {
+            normalizedItem[key] = item[key] === 'NA' || item[key] === 'na' ? 'NA' : item[key];
+          }
+          return normalizedItem;
+        });
+
+        const sortedResources = [...normalizedData].sort((a, b) => (parseFloat(b.TotalCost) || 0) - (parseFloat(a.TotalCost) || 0));
         setResources(sortedResources);
         setFilteredResources(sortedResources);
 
@@ -234,7 +241,7 @@ function Dashboard() {
     };
 
     setCloudProviderSummary(Object.entries(updateSummary("CloudProvider")).map(([provider, cost]) => ({ provider, cost })));
-    setEntityCostSummary(Object.entries(updateSummary("Entity")).map(([entity, cost]) => ({ entity, cost })));
+    setEntityCostSummary(Object.entries(updateSummary("Entity")).map(([entity, cost]) => ({ entity: entity === 'NA' || entity === 'na' ? 'NA' : entity, cost })));
     setCioCostSummary(Object.entries(updateSummary("CIO")).map(([cio, cost]) => ({ cio, cost })));
     setRegionCostSummary(Object.entries(updateSummary("Region")).map(([region, cost]) => ({ region, cost })));
     setResourceTypeSummary(Object.entries(updateSummary("ResourceType")).map(([type, cost]) => ({ type, cost })));
@@ -271,7 +278,7 @@ function Dashboard() {
     };
 
     setCloudProviderSummary(Object.entries(updateSummary("CloudProvider")).map(([provider, cost]) => ({ provider, cost })));
-    setEntityCostSummary(Object.entries(updateSummary("Entity")).map(([entity, cost]) => ({ entity, cost })));
+    setEntityCostSummary(Object.entries(updateSummary("Entity")).map(([entity, cost]) => ({ entity: entity === 'NA' || entity === 'na' ? 'NA' : entity, cost })));
     setCioCostSummary(Object.entries(updateSummary("CIO")).map(([cio, cost]) => ({ cio, cost })));
     setRegionCostSummary(Object.entries(updateSummary("Region")).map(([region, cost]) => ({ region, cost })));
     setResourceTypeSummary(Object.entries(updateSummary("ResourceType")).map(([type, cost]) => ({ type, cost })));
@@ -330,7 +337,92 @@ function Dashboard() {
     document.body.removeChild(link);
   };
 
-  return (
+  useEffect(() => {
+    const interval = setInterval(() => {
+      axios.get(`http://localhost:8000/api/resources?email=${user.email}`)
+        .then((res) => {
+          const normalizedData = res.data.map((item) => {
+            const normalizedItem = {};
+            for (const key in item) {
+              normalizedItem[key] = item[key] === 'NA' || item[key] === 'na' ? 'NA' : item[key];
+            }
+            return normalizedItem;
+          });
+
+          const sortedResources = [...normalizedData].sort((a, b) => (parseFloat(b.TotalCost) || 0) - (parseFloat(a.TotalCost) || 0));
+          setResources(sortedResources);
+          setFilteredResources(sortedResources);
+          // Update summaries dynamically based on new data
+          const updateSummary = (key) => {
+            return sortedResources.reduce((acc, curr) => {
+              if (!curr[key] || !curr.TotalCost) return acc;
+              acc[curr[key]] = (acc[curr[key]] || 0) + Number(curr.TotalCost);
+              return acc;
+            }, {});
+          };
+          setCloudProviderSummary(Object.entries(updateSummary("CloudProvider")).map(([provider, cost]) => ({ provider, cost })));
+          setEntityCostSummary(Object.entries(updateSummary("Entity")).map(([entity, cost]) => ({ entity, cost })));
+          setCioCostSummary(Object.entries(updateSummary("CIO")).map(([cio, cost]) => ({ cio, cost })));
+          setRegionCostSummary(Object.entries(updateSummary("Region")).map(([region, cost]) => ({ region, cost })));
+          setResourceTypeSummary(Object.entries(updateSummary("ResourceType")).map(([type, cost]) => ({ type, cost })));
+          setEnvironmentSummary(Object.entries(updateSummary("Environment")).map(([env, cost]) => ({ env, cost })));
+          setCostCenterSummary(Object.entries(updateSummary("CostCenter")).map(([costCenter, cost]) => ({ costCenter, cost })));
+          setApplicationCodeSummary(Object.entries(updateSummary("ApplicationCode")).map(([applicationCode, cost]) => ({ applicationCode, cost })));
+          setFeatureCostSummary(Object.entries(updateSummary("Feature")).map(([feature, cost]) => ({ feature, cost })));
+          setLabCostSummary(Object.entries(updateSummary("Lab")).map(([lab, cost]) => ({ lab, cost })));
+        })
+        .catch((err) => console.error(err));
+    }, 60000);
+    return () => clearInterval(interval);
+  }, [user.email]);
+
+  // Add viewport meta tag for responsiveness
+const metaViewport = document.createElement('meta');
+metaViewport.name = 'viewport';
+metaViewport.content = 'width=device-width, initial-scale=1';
+document.head.appendChild(metaViewport);
+
+// Apply responsive styles using CSS
+const responsiveStyles = `
+  .dashboard-container {
+    display: flex;
+    flex-direction: column;
+    padding: 1rem;
+  }
+
+  .summary-section {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    margin-bottom: 1rem;
+  }
+
+  .summary-item {
+    flex: 1 1 calc(33.333% - 1rem);
+    margin: 0.5rem;
+    box-sizing: border-box;
+  }
+
+  @media (max-width: 768px) {
+    .summary-item {
+      flex: 1 1 calc(50% - 1rem);
+    }
+  }
+
+  @media (max-width: 480px) {
+    .summary-item {
+      flex: 1 1 100%;
+    }
+  }
+`;
+
+const styleElement = document.createElement('style');
+styleElement.textContent = responsiveStyles;
+document.head.appendChild(styleElement);
+
+// Wrap the dashboard content in a container
+return (
+  <div className="dashboard-container">
     <div className="App finops-dashboard glassy-bg" style={{
       minHeight: '100vh',
       background: 'linear-gradient(120deg, #232526 0%, #414345 100%)',
@@ -1132,6 +1224,7 @@ function Dashboard() {
 
       {/* Footer removed as requested */}
     </div>
+  </div>
   );
 }
 
