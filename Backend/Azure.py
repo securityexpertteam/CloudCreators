@@ -540,7 +540,6 @@ def analyze_azure_resources():
             except Exception as e:
                 print(f"[WARNING] Error fetching storage metric for {resource.name}: {e}")
             
-            current_db_size_gb = 0.0049
             # DB underutilized logic
             if db_size_threshold is not None and current_db_size_gb is not None and current_db_size_gb < db_size_threshold:
                 findings.append("DB Underutilised")
@@ -1150,3 +1149,4 @@ def analyze_azure_resources():
 
 if __name__ == "__main__":
     analyze_azure_resources()
+
