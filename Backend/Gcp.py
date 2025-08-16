@@ -1865,99 +1865,132 @@ def analyze_gke_clusters_holistically(project_id, credentials, thresholds):
 
 def get_resource_cost(resource_type, config):
     """
-    Calculates the estimated monthly cost of a given GCP resource by looking up
-    its pricing SKUs from the pre-cached list.
+    Calculates the estimated monthly cost for a given GCP resource.
+    This enhanced version uses more robust SKU matching patterns for all resource types
+    to ensure accurate cost lookup and prevent '0' cost calculations.
     """
     cost_per_month = 0.0
+    HOURS_PER_MONTH = 730  # Average hours in a month
 
     try:
         if resource_type == 'vm':
-            machine_type = config['machine_type']
-            instance_family = machine_type.split('-')[0].upper()
+            machine_type = config.get('machine_type', '')
+            region = config.get('region', 'global')
 
-            if instance_family == 'E2':
-                cpu_sku_filter = "E2 Instance Core running in"
-                ram_sku_filter = "E2 Instance Ram running in"
-            else:
-                cpu_sku_filter = f"{instance_family} Instance Core running in"
-                ram_sku_filter = f"{instance_family} Instance Ram running in"
+            # Example: 'e2-medium' -> family is 'E2'
+            machine_family = machine_type.split('-')[0].upper()
 
-            cpu_price_per_hour, _ = find_sku_in_list("Compute Engine API", cpu_sku_filter, config['region'])
-            ram_price_per_hour_gb, _ = find_sku_in_list("Compute Engine API", ram_sku_filter, config['region'])
-            cost_per_month = (config['cpu_cores'] * cpu_price_per_hour + config[
-                'memory_gb'] * ram_price_per_hour_gb) * 730
+            # Find price for CPU cores and RAM using more reliable search patterns
+            cpu_sku_pattern = f"{machine_family} Instance Core"
+            ram_sku_pattern = f"{machine_family} Instance Ram"
+
+            cpu_price_per_hour, _ = find_sku_in_list("Compute Engine API", cpu_sku_pattern, region)
+            ram_price_per_gb_hour, _ = find_sku_in_list("Compute Engine API", ram_sku_pattern, region)
+
+            cpu_cores = config.get('cpu_cores', 0)
+            memory_gb = config.get('memory_gb', 0)
+
+            cost_per_month = (cpu_cores * cpu_price_per_hour + memory_gb * ram_price_per_gb_hour) * HOURS_PER_MONTH
 
         elif resource_type == 'disk':
-            disk_type_map = {'pd-standard': 'Standard', 'pd-balanced': 'Balanced', 'pd-ssd': 'SSD'}
-            disk_type_name = disk_type_map.get(config['disk_type'], 'Standard')
+            disk_type = config.get('disk_type', 'pd-standard')
+            size_gb = config.get('size_gb', 0)
+            region = config.get('region', 'global')
 
-            disk_sku_filter = f"{disk_type_name} PD Capacity"
-            disk_price_per_gb_month, _ = find_sku_in_list("Compute Engine API", disk_sku_filter, config['region'])
-            cost_per_month = config['size_gb'] * disk_price_per_gb_month
+            storage_type_map = {
+                'pd-standard': 'Standard',
+                'pd-balanced': 'Balanced',
+                'pd-ssd': 'SSD',
+                'pd-extreme': 'Extreme'
+            }
+            mapped_type = storage_type_map.get(disk_type, 'SSD')
+            # Broader search term for persistent disks
+            sku_pattern = f"{mapped_type} backed PD Capacity"
+
+            price_per_gb_month, _ = find_sku_in_list("Compute Engine API", sku_pattern, region)
+            cost_per_month = size_gb * price_per_gb_month
 
         elif resource_type == 'snapshot':
-            snapshot_sku_filter = "Snapshot Storage"
-            snapshot_price_per_gb_month, _ = find_sku_in_list("Compute Engine API", snapshot_sku_filter,
-                                                              config['region'])
-            cost_per_month = config['size_gb'] * snapshot_price_per_gb_month
+            size_gb = config.get('size_gb', 0)
+            price_per_gb_month, _ = find_sku_in_list("Compute Engine API", "Storage PD Snapshot", "global")
+            cost_per_month = size_gb * price_per_gb_month
 
         elif resource_type == 'bucket':
-            bucket_sku_filter = "Standard Storage"
-            bucket_price_per_gb_month, _ = find_sku_in_list("Google Cloud Storage", bucket_sku_filter, config['region'])
-            cost_per_month = config['size_gb'] * bucket_price_per_gb_month
+            size_gb = config.get('size_gb', 0)
+            region = config.get('region', 'global')
+            sku_pattern = "Standard Storage US Regional"  # Example for standard storage
+            price_per_gb_month, _ = find_sku_in_list("Google Cloud Storage", sku_pattern, region)
+            cost_per_month = size_gb * price_per_gb_month
+
+        elif resource_type == 'public_ip':
+            region = config.get('region', 'global')
+            price_per_hour, _ = find_sku_in_list("Compute Engine API", "Static IP Charge", region)
+            cost_per_month = price_per_hour * HOURS_PER_MONTH
+
+        elif resource_type == 'load_balancer':
+            region = config.get('region', 'global')
+            price_per_hour, _ = find_sku_in_list("Compute Engine API", "Forwarding Rule Minimum Fee", region)
+            cost_per_month = price_per_hour * HOURS_PER_MONTH
+
+        elif resource_type == 'gke_cluster':
+            price_per_hour, _ = find_sku_in_list("Kubernetes Engine", "Cluster Management Fee", "global")
+            cost_per_month = price_per_hour * HOURS_PER_MONTH
 
         elif resource_type == 'cloud_run_idle':
-            cpu_idle_filter = "CPU Allocation Idle"
-            mem_idle_filter = "Memory Allocation Idle"
-            cpu_price, _ = find_sku_in_list("Cloud Run", cpu_idle_filter, config['region'])
-            mem_price, _ = find_sku_in_list("Cloud Run", mem_idle_filter, config['region'])
-            cost_per_month = (config['cpu'] * cpu_price + config['memory_gb'] * mem_price) * 730
+            cpu = config.get('cpu', 0)
+            memory_gb = config.get('memory_gb', 0)
+            region = config.get('region', 'global')
+
+            cpu_price_per_hour, _ = find_sku_in_list("Cloud Run", "CPU allocation time", region)
+            ram_price_per_gb_hour, _ = find_sku_in_list("Cloud Run", "Memory allocation time", region)
+
+            cost_per_month = (cpu * cpu_price_per_hour + memory_gb * ram_price_per_gb_hour) * HOURS_PER_MONTH
 
         elif resource_type == 'cloud_sql':
             vcpus = config.get('vcpus', 0)
             memory_gb = config.get('memory_gb', 0)
             storage_type = config.get('storage_type', 'SSD')
             storage_size_gb = config.get('storage_size_gb', 0)
-            region = config.get('region')
+            region = config.get('region', 'us-central1')
             db_version = config.get('db_version', '')
 
+            engine_map = {'POSTGRES': 'PostgreSQL', 'MYSQL': 'MySQL', 'SQLSERVER': 'SQL Server'}
             engine_sku_name = "MySQL"
-            if 'POSTGRES' in db_version:
-                engine_sku_name = "PostgreSQL"
-            elif 'SQLSERVER' in db_version:
-                engine_sku_name = "SQL Server"
+            for k, v in engine_map.items():
+                if k in db_version.upper():
+                    engine_sku_name = v
+                    break
 
-            instance_cost_monthly = 0
+            instance_cost_monthly = 0.0
             if vcpus > 0 and memory_gb > 0:
-                cpu_sku_filter = f"{engine_sku_name} DB Instance Core"
-                ram_sku_filter = f"{engine_sku_name} DB Instance Ram"
-                cpu_price_per_hour, _ = find_sku_in_list("Cloud SQL", cpu_sku_filter, region)
-                ram_price_per_hour_gb, _ = find_sku_in_list("Cloud SQL", ram_sku_filter, region)
-                instance_cost_monthly = (vcpus * cpu_price_per_hour + memory_gb * ram_price_per_hour_gb) * 730
+                # Use a list of patterns for better matching
+                cpu_patterns = [f"{engine_sku_name} vCPU", f"Core for {engine_sku_name}", "custom vCPU"]
+                ram_patterns = [f"{engine_sku_name} RAM", f"Memory for {engine_sku_name}", "custom RAM"]
 
-            storage_sku_filter = f"{storage_type} storage for Cloud SQL"
-            storage_price_per_gb_month, _ = find_sku_in_list("Cloud SQL", storage_sku_filter, region)
-            storage_cost_monthly = storage_size_gb * storage_price_per_gb_month
+                cpu_price, _ = (0.0, "")
+                for pattern in cpu_patterns:
+                    cpu_price, _ = find_sku_in_list("Cloud SQL", pattern, region)
+                    if cpu_price > 0: break
 
+                ram_price, _ = (0.0, "")
+                for pattern in ram_patterns:
+                    ram_price, _ = find_sku_in_list("Cloud SQL", pattern, region)
+                    if ram_price > 0: break
+
+                instance_cost_monthly = (vcpus * cpu_price + memory_gb * ram_price) * HOURS_PER_MONTH
+
+            # Try multiple patterns for storage to ensure a match
+            storage_patterns = [f"{storage_type} storage for Cloud SQL", f"{storage_type} storage", "Storage PD"]
+            storage_price, _ = (0.0, "")
+            for pattern in storage_patterns:
+                storage_price, _ = find_sku_in_list("Cloud SQL", pattern, region)
+                if storage_price > 0: break
+
+            storage_cost_monthly = storage_size_gb * storage_price
             cost_per_month = instance_cost_monthly + storage_cost_monthly
 
-        elif resource_type == 'public_ip':
-            ip_sku_filter = "Static IP Charge"
-            ip_price_per_hour, _ = find_sku_in_list("Compute Engine API", ip_sku_filter, config['region'])
-            cost_per_month = ip_price_per_hour * 730
-
-        elif resource_type == 'load_balancer':
-            lb_sku_filter = "Forwarding Rule Minimum Fee"
-            lb_price_per_hour, _ = find_sku_in_list("Compute Engine API", lb_sku_filter, config['region'])
-            cost_per_month = lb_price_per_hour * 730
-
-        elif resource_type == 'gke_cluster':
-            gke_sku_filter = "GKE Cluster Fee"
-            gke_price_per_hour, _ = find_sku_in_list("Kubernetes Engine", gke_sku_filter, 'global')
-            cost_per_month = gke_price_per_hour * 730
-
     except Exception as e:
-        print(f"     Cost calculation failed for {resource_type} {config.get('name', '')}: {e}")
+        print(f"     [ERROR] Cost calculation failed for {resource_type} {config.get('name', '')}: {e}")
         return 0.0
 
     return cost_per_month
